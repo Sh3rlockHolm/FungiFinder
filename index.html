@@ -78,27 +78,6 @@
           <span class="confidence-pill" id="confidenceBadge">Confidence</span>
         </div>
 
-        <section class="method-panel" aria-label="Scoring method">
-          <h2>General conditions model</h2>
-          <p>
-            A current fruiting signal based on recent weather timing, habitat context,
-            and nearby recent observation activity.
-          </p>
-          <dl>
-            <div>
-              <dt>Now</dt>
-              <dd>Current fruiting conditions only, not species-specific.</dd>
-            </div>
-            <div>
-              <dt>Context</dt>
-              <dd>Recent nearby observations (7d/14d) lead; seasonality is a weak prior.</dd>
-            </div>
-            <div>
-              <dt>Scope</dt>
-              <dd>Designed for active fruiting windows, not generic "mushroom season."</dd>
-            </div>
-          </dl>
-        </section>
       </section>
 
       <section class="map-pane" aria-label="Map and daily prognosis">
@@ -144,7 +123,6 @@
                 </div>
               </div>
               <div class="detail-metrics" id="detailMetrics"></div>
-              <button class="ghost-button weighting-button" id="openWeightingButton" type="button">Model detail</button>
               <p class="detail-copy" id="detailCopy">
                 The highlighted day explains how general growing conditions line up at that point in the timeline.
               </p>
@@ -152,8 +130,8 @@
             <section class="regional-panel" aria-label="Regional observation signal">
               <div class="regional-heading">
                 <div>
-                  <p class="eyebrow">Empirical region signal</p>
-                  <h4>Nearby fungi activity</h4>
+                  <p class="eyebrow">Nearby reports</p>
+                  <h4>What people recently found</h4>
                 </div>
                 <span class="chart-unit" id="regionalConfidence">Loading</span>
               </div>
@@ -166,21 +144,6 @@
         </section>
       </section>
     </main>
-
-    <div class="modal-backdrop" id="weightingModal" hidden>
-      <div class="modal-window" role="dialog" aria-modal="true" aria-labelledby="weightingTitle">
-        <div class="modal-header">
-          <div>
-            <p class="eyebrow">Model weighting</p>
-            <h3 id="weightingTitle">Ranked factor impact</h3>
-          </div>
-          <button class="icon-button modal-close" id="closeWeightingButton" type="button" aria-label="Close model weighting">
-            X
-          </button>
-        </div>
-        <div class="breakdown-strip" id="breakdownStrip"></div>
-      </div>
-    </div>
 
     <script
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"

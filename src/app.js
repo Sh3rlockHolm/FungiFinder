@@ -21,8 +21,6 @@ const state = {
 const elements = {
   analysisCopy: document.querySelector("#analysisCopy"),
   analysisTitle: document.querySelector("#analysisTitle"),
-  breakdownStrip: document.querySelector("#breakdownStrip"),
-  closeWeightingButton: document.querySelector("#closeWeightingButton"),
   combinedChart: document.querySelector("#combinedChart"),
   confidenceBadge: document.querySelector("#confidenceBadge"),
   contextCopy: document.querySelector("#contextCopy"),
@@ -36,7 +34,6 @@ const elements = {
   forestTypeSelect: document.querySelector("#forestTypeSelect"),
   locationInput: document.querySelector("#locationInput"),
   locationSuggestions: document.querySelector("#locationSuggestions"),
-  openWeightingButton: document.querySelector("#openWeightingButton"),
   placeLabel: document.querySelector("#placeLabel"),
   daySelector: document.querySelector("#daySelector"),
   regionalConfidence: document.querySelector("#regionalConfidence"),
@@ -48,7 +45,6 @@ const elements = {
   todayScore: document.querySelector("#todayScore"),
   todayVerdict: document.querySelector("#todayVerdict"),
   useLocationButton: document.querySelector("#useLocationButton"),
-  weightingModal: document.querySelector("#weightingModal"),
 };
 
 const dayFormatter = new Intl.DateTimeFormat(undefined, {
@@ -179,9 +175,10 @@ function buildReasons({ rain72h, priorRain72h, currentRain, avgTemp, nightlyMin,
   if (currentRain >= 6) reasons.push("Ongoing heavy rain can suppress near-term fruiting visibility.");
   else if (rain72h > 0) reasons.push("Recent moisture is present without strongly over-wetting today.");
 
-  if (avgTemp >= 8 && avgTemp <= 18) reasons.push("Average temperature is favorable.");
+  if (avgTemp >= 8 && avgTemp <= 18) reasons.push("Average temperature is in a good range.");
   else if (avgTemp < 5) reasons.push("Temperatures are likely too cold.");
-  else reasons.push("Warm conditions may shorten the window.");
+  else if (avgTemp >= 30) reasons.push("Very hot conditions (30 C+) usually suppress mushroom fruiting.");
+  else reasons.push("Warmer-than-ideal conditions may shorten the fruiting window.");
 
   if (nightlyMin < -1) reasons.push("Recent frost is a strong negative signal.");
   else if (nightlyMin < 4) reasons.push("Cold nights reduce confidence.");
@@ -255,21 +252,21 @@ function confidenceForRegionalStats(stats) {
 
 function summarizeRegionalStats(stats) {
   if (!stats || stats.status === "unavailable") {
-    return "Regional observations are unavailable, so the score relies more on weather timing and weak seasonal prior.";
+    return "We could not load nearby observation data, so this result leans more on weather patterns.";
   }
   if (stats.totalObservations < 20) {
-    return "There are too few nearby fungi observations to calibrate this region confidently.";
+    return "There are only a few nearby records, so this local activity read is low confidence.";
   }
   if (stats.recent7Observations >= 5) {
-    return "Nearby fungi observations in the last 7 days indicate active current fruiting.";
+    return "Many local fungi were reported in the last 7 days, which usually means active fruiting now.";
   }
   if (stats.recent14Observations >= 10) {
-    return "Nearby fungi observations in the last 14 days support an active fruiting window.";
+    return "Reports from the last 14 days suggest an active fruiting window in this area.";
   }
   if (stats.recent14Observations >= 4) {
-    return "There is some nearby recent activity, but the signal is not yet strong.";
+    return "There is some nearby recent activity, but not enough for a strong signal.";
   }
-  return "Recent nearby observations are limited; weather timing is driving most of the score.";
+  return "Very few recent local reports were found, so weather is driving most of this score.";
 }
 
 async function fetchRegionalObservationStats(latitude, longitude, dateString) {
@@ -583,7 +580,7 @@ function renderSelectedDay() {
   elements.todayVerdict.textContent = selectedDay.verdict;
   elements.confidenceBadge.textContent = selectedDay.confidence;
   elements.analysisTitle.textContent = `${label} evidence`;
-  elements.analysisCopy.textContent = `Tap any day to compare calibrated fruiting probability. Model ${MODEL_METADATA.modelVersion}.`;
+  elements.analysisCopy.textContent = "Tap any day to compare near-term fruiting conditions using weather plus nearby reports.";
   elements.seasonBadge.textContent = `${selectedDay.season} (weak prior)`;
   elements.detailDateLabel.textContent = label;
   elements.detailScore.textContent = `${selectedDay.score}/100`;
@@ -595,14 +592,6 @@ function renderSelectedDay() {
     <div class="metric-pill"><span>Max temp</span><strong>${selectedDay.maxTemp.toFixed(1)} C</strong></div>
     <div class="metric-pill"><span>Rainfall</span><strong>${selectedDay.expectedRainfall.toFixed(1)} mm</strong></div>
   `;
-  elements.breakdownStrip.innerHTML = selectedDay.factorImportance
-    .map((factor, index) => `
-      <div class="breakdown-pill">
-        <span>#${index + 1} ${factor.label}</span>
-        <strong>${factor.direction} (${factor.contributionPercent}%)</strong>
-      </div>
-    `)
-    .join("");
   renderRegionalStats();
   renderDaySelector();
 }
@@ -612,17 +601,17 @@ function renderRegionalStats() {
   if (!stats) {
     elements.regionalConfidence.textContent = "Loading";
     elements.regionalMetrics.innerHTML = "";
-    elements.regionalCopy.textContent = "Recent nearby observations are the strongest live fruiting signal when available.";
+    elements.regionalCopy.textContent = "Loading recent nearby iNaturalist fungi observations (within 50 km).";
     return;
   }
   elements.regionalConfidence.textContent = stats.confidence;
   elements.regionalMetrics.innerHTML = `
-    <div class="metric-pill"><span>Recent 7d</span><strong>${stats.recent7Observations}</strong></div>
-    <div class="metric-pill"><span>Recent 14d</span><strong>${stats.recent14Observations}</strong></div>
-    <div class="metric-pill"><span>This month</span><strong>${stats.seasonalObservations}</strong></div>
-    <div class="metric-pill"><span>Fruiting signal</span><strong>${Math.round(stats.empiricalScore)}</strong></div>
+    <div class="metric-pill"><span>Reports in 7 days</span><strong>${stats.recent7Observations}</strong></div>
+    <div class="metric-pill"><span>Reports in 14 days</span><strong>${stats.recent14Observations}</strong></div>
+    <div class="metric-pill"><span>Reports this month</span><strong>${stats.seasonalObservations}</strong></div>
+    <div class="metric-pill"><span>Local activity score</span><strong>${Math.round(stats.empiricalScore)}</strong></div>
   `;
-  elements.regionalCopy.textContent = `${stats.summary} Source: ${stats.source}; 50 km radius.`;
+  elements.regionalCopy.textContent = `${stats.summary} Data source: ${stats.source} fungi observations (verifiable), 50 km radius.`;
 }
 
 function moveFocus(step) {
@@ -643,20 +632,6 @@ function setFocusDate(date) {
   state.focusDate = state.scoredDays[nextIndex].date;
   renderCombinedChart();
   renderSelectedDay();
-}
-
-function openWeightingModal() {
-  elements.weightingModal.hidden = false;
-  requestAnimationFrame(() => {
-    elements.weightingModal.classList.add("is-open");
-  });
-}
-
-function closeWeightingModal() {
-  elements.weightingModal.classList.remove("is-open");
-  window.setTimeout(() => {
-    if (!elements.weightingModal.classList.contains("is-open")) elements.weightingModal.hidden = true;
-  }, 220);
 }
 
 function hideSuggestions() {
@@ -870,14 +845,6 @@ elements.combinedChart.addEventListener("click", (event) => {
   if (!clicked) return;
   const inSelectableRange = state.scoredDays.some((day) => day.date === clicked.date);
   if (inSelectableRange) setFocusDate(clicked.date);
-});
-elements.openWeightingButton.addEventListener("click", openWeightingModal);
-elements.closeWeightingButton.addEventListener("click", closeWeightingModal);
-elements.weightingModal.addEventListener("click", (event) => {
-  if (event.target === elements.weightingModal) closeWeightingModal();
-});
-window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !elements.weightingModal.hidden) closeWeightingModal();
 });
 window.addEventListener("resize", renderCombinedChart);
 
