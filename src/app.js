@@ -643,11 +643,12 @@ function renderSelectedDay() {
   elements.detailDateLabel.textContent = label;
   elements.detailScore.textContent = `${selectedDay.score}/100`;
   elements.detailVerdict.textContent = selectedDay.verdict;
-  elements.detailCopy.textContent = `${selectedDay.reasons.join(" ")} Moisture timing uses recent days, with the strongest influence typically from rain about 2 days before.`;
+  elements.detailCopy.textContent = `${selectedDay.reasons.join(" ")} Moisture timing uses recent days, with the strongest influence typically from rain about 2 days before. Ground moisture is a modeled topsoil estimate (0-7 cm), not an in-ground sensor read.`;
   elements.detailMetrics.innerHTML = `
     <div class="metric-pill"><span>Temp (48h min/avg/max)</span><strong>${selectedDay.temp48hMin.toFixed(1)} / ${selectedDay.temp48hAvg.toFixed(1)} / ${selectedDay.temp48hMax.toFixed(1)} C</strong></div>
     <div class="metric-pill"><span>Rain prior 72h</span><strong>${selectedDay.rain72h.toFixed(1)} mm</strong></div>
     <div class="metric-pill"><span>Humidity (72h avg)</span><strong>${Number.isFinite(selectedDay.humidity72hAvg) ? selectedDay.humidity72hAvg.toFixed(0) : "--"} %</strong></div>
+    <div class="metric-pill"><span>Ground moisture (0-7 cm)</span><strong>${Number.isFinite(selectedDay.soilMoistureTop) ? selectedDay.soilMoistureTop.toFixed(2) : "--"} m3/m3</strong></div>
   `;
   renderRegionalStats();
   renderDaySelector();
