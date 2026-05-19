@@ -11,6 +11,7 @@ const state = {
   scoredDays: [],
   selected: { latitude: 41.0772, longitude: -73.4687, label: "Darien, CT" },
   regionalPage: 1,
+  regionalRenderedPage: 1,
   regionalTilePages: new Map(),
   selectedSuggestion: null,
   suggestionRequestId: 0,
@@ -472,32 +473,43 @@ function renderRegionalTilesWithSlide(stats, targetPage) {
   ensureRegionalPageMarkup(stats, Math.max(1, safePage - 1), pageSize);
   ensureRegionalPageMarkup(stats, Math.min(pageCount, safePage + 1), pageSize);
 
-  const direction = safePage >= (state.regionalPage || 1) ? "forward" : "backward";
+  const previousPage = state.regionalRenderedPage || 1;
+  const direction = safePage > previousPage ? "forward" : safePage < previousPage ? "backward" : "none";
   const currentTrack = elements.regionalTiles.querySelector(".regional-tiles-track.current");
 
   const incoming = document.createElement("div");
-  incoming.className = `regional-tiles-track incoming ${direction === "forward" ? "from-right" : "from-left"}`;
+  const incomingSide = direction === "backward" ? "from-left" : "from-right";
+  incoming.className = `regional-tiles-track incoming ${incomingSide}${direction === "backward" ? " slower" : ""}`;
   incoming.innerHTML = nextMarkup;
   elements.regionalTiles.appendChild(incoming);
 
   if (!currentTrack) {
     incoming.classList.remove("incoming", "from-right", "from-left");
     incoming.classList.add("current");
-    state.regionalPage = safePage;
+    state.regionalRenderedPage = safePage;
+    return;
+  }
+
+  if (direction === "none") {
+    currentTrack.remove();
+    incoming.classList.remove("incoming", "from-right", "from-left", "slower");
+    incoming.classList.add("current");
+    state.regionalRenderedPage = safePage;
     return;
   }
 
   currentTrack.classList.add(direction === "forward" ? "to-left" : "to-right");
+  if (direction === "backward") currentTrack.classList.add("slower");
   requestAnimationFrame(() => {
     incoming.classList.add("enter");
     incoming.classList.remove("from-right", "from-left");
   });
   window.setTimeout(() => {
     currentTrack.remove();
-    incoming.classList.remove("incoming", "enter");
+    incoming.classList.remove("incoming", "enter", "slower");
     incoming.classList.add("current");
-  }, 480);
-  state.regionalPage = safePage;
+  }, direction === "backward" ? 620 : 500);
+  state.regionalRenderedPage = safePage;
 }
 
 function openImageModal(src, title) {
@@ -992,6 +1004,7 @@ async function analyzeLocation(location, shouldMoveMap = true) {
   elements.detailCopy.textContent = "Refreshing weather context for the selected location.";
   state.regionalStats = null;
   state.regionalPage = 1;
+  state.regionalRenderedPage = 1;
   state.regionalTilePages.clear();
   renderRegionalStats();
 
