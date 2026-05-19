@@ -198,6 +198,7 @@ async function fetchWeather(latitude, longitude) {
     latitude: latitude.toFixed(5),
     longitude: longitude.toFixed(5),
     daily: "temperature_2m_mean,temperature_2m_max,temperature_2m_min,precipitation_sum",
+    hourly: "temperature_2m,relative_humidity_2m,soil_moisture_0_to_7cm",
     forecast_days: "11",
     past_days: "7",
     timezone: "auto",
@@ -318,6 +319,30 @@ async function fetchRegionalObservationStats(latitude, longitude, dateString) {
 }
 
 function normalizeWeather(payload) {
+  const hourlyByDate = new Map();
+  const hourlyTime = payload.hourly?.time ?? [];
+  const hourlyTemp = payload.hourly?.temperature_2m ?? [];
+  const hourlyRh = payload.hourly?.relative_humidity_2m ?? [];
+  const hourlyTopSoil = payload.hourly?.soil_moisture_0_to_7cm ?? [];
+
+  for (let index = 0; index < hourlyTime.length; index += 1) {
+    const stamp = hourlyTime[index];
+    if (!stamp) continue;
+    const date = stamp.slice(0, 10);
+    if (!hourlyByDate.has(date)) hourlyByDate.set(date, { rhValues: [], vpdValues: [], topSoilValues: [] });
+    const bucket = hourlyByDate.get(date);
+    const t = hourlyTemp[index];
+    const rh = hourlyRh[index];
+    const topSoil = hourlyTopSoil[index];
+    if (Number.isFinite(rh)) bucket.rhValues.push(rh);
+    if (Number.isFinite(topSoil)) bucket.topSoilValues.push(topSoil);
+    if (Number.isFinite(t) && Number.isFinite(rh) && rh > 0) {
+      const svp = 0.6108 * Math.exp((17.27 * t) / (t + 237.3));
+      const vpd = svp * (1 - rh / 100);
+      if (Number.isFinite(vpd)) bucket.vpdValues.push(vpd);
+    }
+  }
+
   return payload.daily.time.map((date, index) => ({
     date,
     expectedRainfall: payload.daily.precipitation_sum[index],
@@ -325,6 +350,9 @@ function normalizeWeather(payload) {
     meanTemp: payload.daily.temperature_2m_mean[index],
     minTemp: payload.daily.temperature_2m_min[index],
     precipitation: payload.daily.precipitation_sum[index],
+    rhMean: mean(hourlyByDate.get(date)?.rhValues ?? []),
+    soilMoistureTop: mean(hourlyByDate.get(date)?.topSoilValues ?? []),
+    vpdMean: mean(hourlyByDate.get(date)?.vpdValues ?? []),
   }));
 }
 
@@ -341,11 +369,16 @@ function windowSlice(days, index, lookbackDays) {
 function scoreDay(days, index, todayIndex) {
   const target = days[index];
   const threeDayWindow = windowSlice(days, index, 3);
+  const twoDayWindow = windowSlice(days, index, 1);
   const previousThreeDayWindow = days.slice(Math.max(0, index - 5), Math.max(0, index - 2));
   const rain1dAgo = days[index - 1]?.precipitation ?? 0;
   const rain2dAgo = days[index - 2]?.precipitation ?? 0;
   const rain3dAgo = days[index - 3]?.precipitation ?? 0;
   const rain72h = sum(threeDayWindow.map((day) => day.precipitation));
+  const humidity72hAvg = mean(threeDayWindow.map((day) => day.rhMean));
+  const temp48hMin = Math.min(...twoDayWindow.map((day) => day.minTemp));
+  const temp48hAvg = mean(twoDayWindow.map((day) => day.meanTemp));
+  const temp48hMax = Math.max(...twoDayWindow.map((day) => day.maxTemp));
   const avgTemp = mean(threeDayWindow.map((day) => day.meanTemp));
   const nightlyMin = Math.min(...threeDayWindow.map((day) => day.minTemp));
   const diurnalRange = mean(threeDayWindow.map((day) => day.maxTemp - day.minTemp));
@@ -359,6 +392,11 @@ function scoreDay(days, index, todayIndex) {
     recent3DiurnalRange: diurnalRange,
     recent3NightMin: nightlyMin,
     recent3Rain: rain72h,
+    rain1dAgo,
+    rain2dAgo,
+    rain3dAgo,
+    recent3TopSoilMoisture: mean(threeDayWindow.map((day) => day.soilMoistureTop)),
+    recent3Vpd: mean(threeDayWindow.map((day) => day.vpdMean)),
   };
   const featureBundle = buildModelFeatures({
     day: target,
@@ -391,6 +429,10 @@ function scoreDay(days, index, todayIndex) {
     rain1dAgo,
     rain2dAgo,
     rain3dAgo,
+    humidity72hAvg,
+    temp48hMin,
+    temp48hAvg,
+    temp48hMax,
     probability: modelInference.probability,
     score: clamp(score, 0, 100),
     season,
@@ -603,10 +645,9 @@ function renderSelectedDay() {
   elements.detailVerdict.textContent = selectedDay.verdict;
   elements.detailCopy.textContent = `${selectedDay.reasons.join(" ")} Moisture timing uses recent days, with the strongest influence typically from rain about 2 days before.`;
   elements.detailMetrics.innerHTML = `
-    <div class="metric-pill"><span>Min temp</span><strong>${selectedDay.minTemp.toFixed(1)} C</strong></div>
-    <div class="metric-pill"><span>Avg temp</span><strong>${selectedDay.meanTemp.toFixed(1)} C</strong></div>
-    <div class="metric-pill"><span>Max temp</span><strong>${selectedDay.maxTemp.toFixed(1)} C</strong></div>
+    <div class="metric-pill"><span>Temp (48h min/avg/max)</span><strong>${selectedDay.temp48hMin.toFixed(1)} / ${selectedDay.temp48hAvg.toFixed(1)} / ${selectedDay.temp48hMax.toFixed(1)} C</strong></div>
     <div class="metric-pill"><span>Rain prior 72h</span><strong>${selectedDay.rain72h.toFixed(1)} mm</strong></div>
+    <div class="metric-pill"><span>Humidity (72h avg)</span><strong>${Number.isFinite(selectedDay.humidity72hAvg) ? selectedDay.humidity72hAvg.toFixed(0) : "--"} %</strong></div>
   `;
   renderRegionalStats();
   renderDaySelector();

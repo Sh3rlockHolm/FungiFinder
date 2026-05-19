@@ -97,10 +97,17 @@ async function fetchWeatherWindow(latitude, longitude, startDate, endDate) {
     end_date: endDate,
     timezone: "UTC",
     daily: "temperature_2m_mean,temperature_2m_max,temperature_2m_min,precipitation_sum",
+    hourly: "temperature_2m,relative_humidity_2m,soil_moisture_0_to_7cm",
   });
   const response = await fetch(`https://archive-api.open-meteo.com/v1/archive?${params}`);
   if (!response.ok) throw new Error(`Weather archive failed ${response.status}`);
   return response.json();
+}
+
+function vpdFromTempRh(tempC, rh) {
+  if (!Number.isFinite(tempC) || !Number.isFinite(rh) || rh <= 0) return null;
+  const svp = 0.6108 * Math.exp((17.27 * tempC) / (tempC + 237.3));
+  return svp * (1 - rh / 100);
 }
 
 async function fetchINatCount(latitude, longitude, d1, d2, extraParams = {}) {
@@ -127,12 +134,31 @@ async function buildRowsForLocation(location) {
   const start = new Date(end);
   start.setUTCDate(start.getUTCDate() - WINDOW_DAYS);
   const weatherPayload = await fetchWeatherWindow(location.latitude, location.longitude, iso(start), iso(end));
+  const hourlyByDate = new Map();
+  const hourlyTime = weatherPayload.hourly?.time ?? [];
+  const hourlyTemp = weatherPayload.hourly?.temperature_2m ?? [];
+  const hourlyRh = weatherPayload.hourly?.relative_humidity_2m ?? [];
+  const hourlyTopSoil = weatherPayload.hourly?.soil_moisture_0_to_7cm ?? [];
+
+  for (let index = 0; index < hourlyTime.length; index += 1) {
+    const stamp = hourlyTime[index];
+    if (!stamp) continue;
+    const date = stamp.slice(0, 10);
+    if (!hourlyByDate.has(date)) hourlyByDate.set(date, { vpdValues: [], topSoilValues: [] });
+    const bucket = hourlyByDate.get(date);
+    const vpd = vpdFromTempRh(hourlyTemp[index], hourlyRh[index]);
+    if (Number.isFinite(vpd)) bucket.vpdValues.push(vpd);
+    if (Number.isFinite(hourlyTopSoil[index])) bucket.topSoilValues.push(hourlyTopSoil[index]);
+  }
+
   const days = weatherPayload.daily.time.map((date, index) => ({
     date,
     meanTemp: weatherPayload.daily.temperature_2m_mean[index],
     minTemp: weatherPayload.daily.temperature_2m_min[index],
     maxTemp: weatherPayload.daily.temperature_2m_max[index],
     precipitation: weatherPayload.daily.precipitation_sum[index],
+    soilMoistureTop: mean(hourlyByDate.get(date)?.topSoilValues ?? []),
+    vpdMean: mean(hourlyByDate.get(date)?.vpdValues ?? []),
   }));
 
   const rows = [];
@@ -140,6 +166,9 @@ async function buildRowsForLocation(location) {
     const day = days[index];
     const recent3 = days.slice(index - 2, index + 1);
     const previous3 = days.slice(index - 5, index - 2);
+    const rain1dAgo = days[index - 1]?.precipitation ?? 0;
+    const rain2dAgo = days[index - 2]?.precipitation ?? 0;
+    const rain3dAgo = days[index - 3]?.precipitation ?? 0;
     const d1Future = shift(day.date, 1);
     const d2Future = shift(day.date, 3);
     const d1Past30 = shift(day.date, -30);
@@ -167,6 +196,11 @@ async function buildRowsForLocation(location) {
         recent3DiurnalRange: mean(recent3.map((entry) => entry.maxTemp - entry.minTemp)),
         recent3NightMin: Math.min(...recent3.map((entry) => entry.minTemp)),
         recent3Rain: sum(recent3.map((entry) => entry.precipitation)),
+        rain1dAgo,
+        rain2dAgo,
+        rain3dAgo,
+        recent3TopSoilMoisture: mean(recent3.map((entry) => entry.soilMoistureTop)),
+        recent3Vpd: mean(recent3.map((entry) => entry.vpdMean)),
       },
       regionalStats: {
         recent7Observations,

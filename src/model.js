@@ -1,23 +1,26 @@
 export const MODEL_METADATA = {
-  modelVersion: "v2.0.0",
+  modelVersion: "v3.0.0",
   modelType: "regularized_logistic",
   calibrationMethod: "platt",
   trainedWindow: {
     from: "2024-01-01",
     to: "2026-04-30",
   },
-  featureSchemaHash: "ff-v2-recency-72h-platt-20260519",
+  featureSchemaHash: "ff-v3-moisture-vpd-soil-platt-20260519",
   targetDefinition: "P(activity_spike_next_1_3_days)",
   radiusKm: 50,
 };
 
 const COEFFICIENTS = {
-  intercept: -0.54,
+  intercept: -0.66,
   obsRecent7: 1.18,
   obsRecent14: 0.92,
   obsResearch14: 0.34,
-  rainPrior24To72: 0.88,
+  rainLagWeighted: 1.02,
+  rainPrior24To72: 0.6,
   drySpellPenalty: -0.78,
+  soilMoistureTop: 0.82,
+  vpdStress: -0.74,
   rainCurrentPenalty: -0.47,
   warmingAfterRain: 0.61,
   tempWindow: 0.58,
@@ -34,8 +37,11 @@ const FACTOR_LABELS = {
   obsRecent7: "Recent nearby observations (7d)",
   obsRecent14: "Recent nearby observations (14d)",
   obsResearch14: "Recent research-grade observations",
+  rainLagWeighted: "Lagged rain effect (1/2/3-day)",
   rainPrior24To72: "Rain 24-72h ago",
   drySpellPenalty: "Dry spell penalty (insufficient recent rain)",
+  soilMoistureTop: "Topsoil moisture",
+  vpdStress: "Drying-air stress (VPD)",
   rainCurrentPenalty: "Current rain penalty",
   warmingAfterRain: "Warming after rain",
   tempWindow: "Temperature window",
@@ -72,10 +78,13 @@ export function buildModelFeatures({ day, previousWindow, regionalStats, habitat
   const currentRain = day.precipitation;
   const rain72h = previousWindow.recent3Rain;
   const priorRain24To72 = Math.max(0, rain72h - currentRain);
+  const rainLagWeighted = (previousWindow.rain1dAgo ?? 0) * 0.2 + (previousWindow.rain2dAgo ?? 0) * 0.5 + (previousWindow.rain3dAgo ?? 0) * 0.3;
   const warmingAfterRain = day.meanTemp - previousWindow.previous3AvgTemp;
   const avgTemp3 = previousWindow.recent3AvgTemp;
   const nightlyMin3 = previousWindow.recent3NightMin;
   const volatility3 = previousWindow.recent3DiurnalRange;
+  const topSoilMoisture = previousWindow.recent3TopSoilMoisture ?? day.soilMoistureTop ?? 0;
+  const vpd3 = previousWindow.recent3Vpd ?? day.vpdMean ?? 0;
 
   const monthlyBaseline = Math.max(1, (regionalStats?.seasonalObservations ?? 0) / 30);
   const obsRecent7 = (regionalStats?.recent7Observations ?? 0) / monthlyBaseline;
@@ -87,8 +96,11 @@ export function buildModelFeatures({ day, previousWindow, regionalStats, habitat
     obsRecent7: scale(obsRecent7, 0, 3),
     obsRecent14: scale(obsRecent14, 0, 2.5),
     obsResearch14: scale(obsResearch14, 0, 0.5),
+    rainLagWeighted: centeredScale(rainLagWeighted, 0, 2.5, 12, 35),
     rainPrior24To72: centeredScale(priorRain24To72, 0, 4, 20, 45),
     drySpellPenalty: scale(Math.max(0, 4 - priorRain24To72), 0, 4),
+    soilMoistureTop: centeredScale(topSoilMoisture, 0.08, 0.18, 0.38, 0.55),
+    vpdStress: scale(Math.max(0, vpd3 - 1.1), 0, 1.7),
     rainCurrentPenalty: scale(currentRain, 0, 16),
     warmingAfterRain: centeredScale(warmingAfterRain, -4, 1, 5, 10),
     tempWindow: centeredScale(avgTemp3, 0, 8, 18, 30),
@@ -100,11 +112,14 @@ export function buildModelFeatures({ day, previousWindow, regionalStats, habitat
     diagnostics: {
       avgTemp3,
       currentRain,
+      rainLagWeighted,
       monthlyBaseline,
       nightlyMin3,
       priorRain24To72,
       rain72h,
+      topSoilMoisture,
       volatility3,
+      vpd3,
       warmingAfterRain,
     },
   };
@@ -132,7 +147,15 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
   const logit = Math.log(rawProbability / Math.max(1e-9, 1 - rawProbability));
   const calibratedProbability = clamp(sigmoid(PLATT.a * logit + PLATT.b), 0.01, 0.99);
   const horizonPenalty = clamp(daysAhead / 9, 0, 0.15);
-  const adjustedProbability = clamp(calibratedProbability * (1 - horizonPenalty), 0.01, 0.99);
+  let adjustedProbability = clamp(calibratedProbability * (1 - horizonPenalty), 0.01, 0.99);
+
+  // Physical guardrail: warm temperatures alone should not dominate during very dry conditions.
+  const dryState = (featureVector.drySpellPenalty ?? 0) >= 0.9;
+  const highDryingStress = (featureVector.vpdStress ?? 0) >= 0.75;
+  const weakSoilMoisture = (featureVector.soilMoistureTop ?? 0) <= 0.25;
+  if (dryState && (highDryingStress || weakSoilMoisture)) {
+    adjustedProbability = Math.min(adjustedProbability, 0.58);
+  }
 
   const sparseRegional = !regionalStats || (regionalStats.totalObservations ?? 0) < 20;
   const calibrationRisk = adjustedProbability > 0.9 || adjustedProbability < 0.1;

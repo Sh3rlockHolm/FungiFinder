@@ -1,12 +1,12 @@
 {
-  "modelVersion": "v2.0.0",
+  "modelVersion": "v3.0.0",
   "modelType": "regularized_logistic",
   "calibrationMethod": "platt",
   "trainedWindow": {
     "from": "2024-01-01",
     "to": "2026-04-30"
   },
-  "featureSchemaHash": "ff-v2-recency-72h-platt-20260519",
+  "featureSchemaHash": "ff-v3-moisture-vpd-soil-platt-20260519",
   "targetDefinition": "P(activity_spike_next_1_3_days)",
   "radiusKm": 50
 }
