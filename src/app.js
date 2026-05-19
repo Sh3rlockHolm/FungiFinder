@@ -7,7 +7,7 @@ const state = {
   marker: null,
   regionalStats: null,
   scoredDays: [],
-  selected: { latitude: 48.1351, longitude: 8.2319, label: "Black Forest" },
+  selected: { latitude: 41.0772, longitude: 73.4687, label: "Darien, CT" },
   selectedSuggestion: null,
   suggestionRequestId: 0,
   suggestionTimer: null,
