@@ -54,6 +54,7 @@ const dayFormatter = new Intl.DateTimeFormat(undefined, {
 });
 const weekdayFormatter = new Intl.DateTimeFormat(undefined, { weekday: "short" });
 const monthDayFormatter = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+const shortDateFormatter = new Intl.DateTimeFormat("en-US", { month: "2-digit", day: "2-digit" });
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -129,6 +130,10 @@ function formatTimelineLabelParts(dateString) {
   };
 }
 
+function formatShortDate(dateString) {
+  return shortDateFormatter.format(new Date(`${dateString}T12:00:00`));
+}
+
 function getSeasonForDate(dateString, latitude) {
   const month = new Date(`${dateString}T12:00:00`).getUTCMonth() + 1;
   const northern = latitude >= 0;
@@ -183,7 +188,7 @@ function buildReasons({ rain72h, priorRain72h, currentRain, avgTemp, nightlyMin,
   if (nightlyMin < -1) reasons.push("Recent frost is a strong negative signal.");
   else if (nightlyMin < 4) reasons.push("Cold nights reduce confidence.");
 
-  if (warmTrendScore >= 65) reasons.push("A warming trend after rain supports current fruiting activity.");
+  if (priorRain72h >= 2 && warmTrendScore >= 65) reasons.push("A warming trend after rain supports current fruiting activity.");
 
   return reasons.slice(0, 3);
 }
@@ -337,6 +342,9 @@ function scoreDay(days, index, todayIndex) {
   const target = days[index];
   const threeDayWindow = windowSlice(days, index, 3);
   const previousThreeDayWindow = days.slice(Math.max(0, index - 5), Math.max(0, index - 2));
+  const rain1dAgo = days[index - 1]?.precipitation ?? 0;
+  const rain2dAgo = days[index - 2]?.precipitation ?? 0;
+  const rain3dAgo = days[index - 3]?.precipitation ?? 0;
   const rain72h = sum(threeDayWindow.map((day) => day.precipitation));
   const avgTemp = mean(threeDayWindow.map((day) => day.meanTemp));
   const nightlyMin = Math.min(...threeDayWindow.map((day) => day.minTemp));
@@ -380,6 +388,9 @@ function scoreDay(days, index, todayIndex) {
     diurnalRange,
     nightlyMin,
     rain72h,
+    rain1dAgo,
+    rain2dAgo,
+    rain3dAgo,
     probability: modelInference.probability,
     score: clamp(score, 0, 100),
     season,
@@ -441,8 +452,8 @@ function renderCombinedChart() {
   const visibleSlots = 15;
   const slotWidth = plotWidth / visibleSlots;
   const tempValues = state.allDays.flatMap((day) => [day.minTemp, day.meanTemp, day.maxTemp]);
-  const tempMin = Math.floor(Math.min(...tempValues) - 2);
-  const tempMax = Math.ceil(Math.max(...tempValues) + 2);
+  const tempMin = Math.min(Math.floor(Math.min(...tempValues) - 2), 0);
+  const tempMax = Math.max(Math.ceil(Math.max(...tempValues) + 2), 0);
   const rainMax = Math.max(...state.allDays.map((day) => day.expectedRainfall), 4);
   const rainTop = Math.ceil(rainMax / 5) * 5;
   const barWidth = Math.max(14, slotWidth - 10);
@@ -459,6 +470,8 @@ function renderCombinedChart() {
   const barXAt = (index) => xAt(index) - barWidth / 2;
   const yTempAt = (value) => margin.top + plotHeight - ((value - tempMin) / Math.max(tempMax - tempMin, 8)) * plotHeight;
   const yRainAt = (value) => margin.top + plotHeight - (value / rainTop) * plotHeight;
+  const freezingLineY = yTempAt(0);
+  const focusDateShort = state.focusDate ? formatShortDate(state.focusDate) : "";
 
   const minPoints = state.allDays.map((day, index) => ({ x: xAt(index), y: yTempAt(day.minTemp) }));
   const avgPoints = state.allDays.map((day, index) => ({ x: xAt(index), y: yTempAt(day.meanTemp) }));
@@ -494,6 +507,8 @@ function renderCombinedChart() {
           <text class="y-label" x="${width - margin.right + 16}" y="${y + 4}" text-anchor="start">${rainValue} mm</text>
         `;
       }).join("")}
+      <line class="freezing-line" x1="${margin.left}" y1="${freezingLineY}" x2="${width - margin.right}" y2="${freezingLineY}"></line>
+      <text class="freezing-label" x="${margin.left - 16}" y="${freezingLineY - 6}" text-anchor="end">0 C</text>
       <g clip-path="url(#${clipId})">
         <g class="combined-chart-track" style="transform: translateX(${fromTranslate}px); transform-box: fill-box; transform-origin: center;">
           ${
@@ -534,6 +549,7 @@ function renderCombinedChart() {
         </g>
       </g>
       <line class="target-marker" x1="${markerX}" y1="${margin.top}" x2="${markerX}" y2="${margin.top + plotHeight}"></line>
+      <text class="target-date-label" x="${markerX}" y="${height - 4}" text-anchor="middle">${focusDateShort}</text>
     </svg>
   `;
   state.chartLayout = {
@@ -585,12 +601,12 @@ function renderSelectedDay() {
   elements.detailDateLabel.textContent = label;
   elements.detailScore.textContent = `${selectedDay.score}/100`;
   elements.detailVerdict.textContent = selectedDay.verdict;
-  elements.detailCopy.textContent = selectedDay.reasons.join(" ");
+  elements.detailCopy.textContent = `${selectedDay.reasons.join(" ")} Moisture timing uses recent days, with the strongest influence typically from rain about 2 days before.`;
   elements.detailMetrics.innerHTML = `
     <div class="metric-pill"><span>Min temp</span><strong>${selectedDay.minTemp.toFixed(1)} C</strong></div>
     <div class="metric-pill"><span>Avg temp</span><strong>${selectedDay.meanTemp.toFixed(1)} C</strong></div>
     <div class="metric-pill"><span>Max temp</span><strong>${selectedDay.maxTemp.toFixed(1)} C</strong></div>
-    <div class="metric-pill"><span>Rainfall</span><strong>${selectedDay.expectedRainfall.toFixed(1)} mm</strong></div>
+    <div class="metric-pill"><span>Rain prior 72h</span><strong>${selectedDay.rain72h.toFixed(1)} mm</strong></div>
   `;
   renderRegionalStats();
   renderDaySelector();
