@@ -257,49 +257,21 @@ async function fetchINaturalistCount(latitude, longitude, extraParams = {}) {
   return payload.total_results ?? 0;
 }
 
-function empiricalScoreForStats(stats) {
-  if (!stats || stats.totalObservations < 20) return 58;
-  let score = 40;
-
-  if (stats.recent7Observations >= 10) score += 34;
-  else if (stats.recent7Observations >= 5) score += 24;
-  else if (stats.recent7Observations >= 2) score += 14;
-
-  if (stats.recent14Observations >= 20) score += 22;
-  else if (stats.recent14Observations >= 10) score += 16;
-  else if (stats.recent14Observations >= 4) score += 8;
-
-  if (stats.researchRecent14Observations >= 4) score += 6;
-  if (stats.seasonalObservations >= 60) score += 4;
-  if (stats.totalObservations >= 300) score += 4;
-
-  return clamp(score, 0, 100);
-}
-
 function confidenceForRegionalStats(stats) {
   if (!stats || stats.totalObservations < 20) return "Sparse data";
-  if (stats.recent7Observations >= 5 || stats.recent14Observations >= 12) return "Recent activity signal";
-  if (stats.totalObservations >= 100 && stats.recent14Observations >= 4) return "Moderate recent signal";
-  return "Sparse data";
+  if (stats.totalObservations >= 200) return "High observer coverage";
+  if (stats.totalObservations >= 80) return "Moderate observer coverage";
+  return "Low observer coverage";
 }
 
 function summarizeRegionalStats(stats) {
   if (!stats || stats.status === "unavailable") {
-    return "We could not load nearby observation data, so this result leans more on weather patterns.";
+    return "Nearby report data could not be loaded. Fruiting score uses weather and moisture only.";
   }
   if (stats.totalObservations < 20) {
-    return "There are only a few nearby records, so this local activity read is low confidence.";
+    return "Few nearby reports exist here, so this section is low confidence and should not be treated as absence of fungi.";
   }
-  if (stats.recent7Observations >= 5) {
-    return "Many local fungi were reported in the last 7 days, which usually means active fruiting now.";
-  }
-  if (stats.recent14Observations >= 10) {
-    return "Reports from the last 14 days suggest an active fruiting window in this area.";
-  }
-  if (stats.recent14Observations >= 4) {
-    return "There is some nearby recent activity, but not enough for a strong signal.";
-  }
-  return "Very few recent local reports were found, so weather is driving most of this score.";
+  return "Nearby reports are shown for context only. They reflect observer presence and access, not true fungal abundance.";
 }
 
 async function fetchRegionalObservationStats(latitude, longitude, dateString) {
@@ -315,7 +287,6 @@ async function fetchRegionalObservationStats(latitude, longitude, dateString) {
       ]);
     const stats = {
       confidence: "",
-      empiricalScore: 0,
       recent7Observations,
       recent14Observations,
       researchRecent14Observations,
@@ -324,7 +295,6 @@ async function fetchRegionalObservationStats(latitude, longitude, dateString) {
       status: "available",
       totalObservations,
     };
-    stats.empiricalScore = empiricalScoreForStats(stats);
     stats.confidence = confidenceForRegionalStats(stats);
     stats.summary = summarizeRegionalStats(stats);
     return stats;
@@ -332,7 +302,6 @@ async function fetchRegionalObservationStats(latitude, longitude, dateString) {
     console.error(error);
     return {
       confidence: "Unavailable",
-      empiricalScore: 58,
       recent7Observations: 0,
       recent14Observations: 0,
       researchRecent14Observations: 0,
@@ -710,8 +679,8 @@ function renderRegionalStats() {
   elements.regionalMetrics.innerHTML = `
     <div class="metric-pill"><span>Reports in 7 days</span><strong>${stats.recent7Observations}</strong></div>
     <div class="metric-pill"><span>Reports in 14 days</span><strong>${stats.recent14Observations}</strong></div>
-    <div class="metric-pill"><span>Reports this month</span><strong>${stats.seasonalObservations}</strong></div>
-    <div class="metric-pill"><span>Local activity score</span><strong>${Math.round(stats.empiricalScore)}</strong></div>
+    <div class="metric-pill"><span>Research-grade (14d)</span><strong>${stats.researchRecent14Observations}</strong></div>
+    <div class="metric-pill"><span>All nearby reports</span><strong>${stats.totalObservations}</strong></div>
   `;
   elements.regionalCopy.textContent = `${stats.summary} Data source: ${stats.source} fungi observations (verifiable), 50 km radius.`;
 }

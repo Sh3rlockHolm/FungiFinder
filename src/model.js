@@ -1,42 +1,36 @@
 export const MODEL_METADATA = {
-  modelVersion: "v3.0.0",
+  modelVersion: "v3.1.0",
   modelType: "regularized_logistic",
   calibrationMethod: "platt",
   trainedWindow: {
     from: "2024-01-01",
     to: "2026-04-30",
   },
-  featureSchemaHash: "ff-v3-moisture-vpd-soil-platt-20260519",
+  featureSchemaHash: "ff-v3_1-weather-first-observer-neutral-20260519",
   targetDefinition: "P(activity_spike_next_1_3_days)",
   radiusKm: 50,
 };
 
 const COEFFICIENTS = {
-  intercept: -0.66,
-  obsRecent7: 1.18,
-  obsRecent14: 0.92,
-  obsResearch14: 0.34,
+  intercept: -0.59,
   rainLagWeighted: 1.02,
-  rainPrior24To72: 0.6,
-  drySpellPenalty: -0.78,
-  soilMoistureTop: 0.82,
-  vpdStress: -0.74,
+  rainPrior24To72: 0.67,
+  drySpellPenalty: -0.88,
+  soilMoistureTop: 0.93,
+  vpdStress: -0.82,
   rainCurrentPenalty: -0.47,
   warmingAfterRain: 0.61,
-  tempWindow: 0.58,
+  tempWindow: 0.54,
   frostPenalty: -0.56,
-  volatilityPenalty: -0.28,
+  volatilityPenalty: -0.24,
   habitat: 0.31,
   seasonWeak: 0.14,
-  climateProxy: 0.12,
+  climateProxy: 0.08,
 };
 
 const PLATT = { a: 1.18, b: -0.09 };
 
 const FACTOR_LABELS = {
-  obsRecent7: "Recent nearby observations (7d)",
-  obsRecent14: "Recent nearby observations (14d)",
-  obsResearch14: "Recent research-grade observations",
   rainLagWeighted: "Lagged rain effect (1/2/3-day)",
   rainPrior24To72: "Rain 24-72h ago",
   drySpellPenalty: "Dry spell penalty (insufficient recent rain)",
@@ -86,16 +80,9 @@ export function buildModelFeatures({ day, previousWindow, regionalStats, habitat
   const topSoilMoisture = previousWindow.recent3TopSoilMoisture ?? day.soilMoistureTop ?? 0;
   const vpd3 = previousWindow.recent3Vpd ?? day.vpdMean ?? 0;
 
-  const monthlyBaseline = Math.max(1, (regionalStats?.seasonalObservations ?? 0) / 30);
-  const obsRecent7 = (regionalStats?.recent7Observations ?? 0) / monthlyBaseline;
-  const obsRecent14 = (regionalStats?.recent14Observations ?? 0) / (monthlyBaseline * 2);
-  const obsResearch14 = (regionalStats?.researchRecent14Observations ?? 0) / Math.max(1, (regionalStats?.recent14Observations ?? 1));
   const climateProxy = 1 - clamp(Math.abs(latitude) / 75, 0, 1);
 
   return {
-    obsRecent7: scale(obsRecent7, 0, 3),
-    obsRecent14: scale(obsRecent14, 0, 2.5),
-    obsResearch14: scale(obsResearch14, 0, 0.5),
     rainLagWeighted: centeredScale(rainLagWeighted, 0, 2.5, 12, 35),
     rainPrior24To72: centeredScale(priorRain24To72, 0, 4, 20, 45),
     drySpellPenalty: scale(Math.max(0, 4 - priorRain24To72), 0, 4),
@@ -113,7 +100,6 @@ export function buildModelFeatures({ day, previousWindow, regionalStats, habitat
       avgTemp3,
       currentRain,
       rainLagWeighted,
-      monthlyBaseline,
       nightlyMin3,
       priorRain24To72,
       rain72h,

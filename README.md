@@ -25,7 +25,7 @@ Open-Meteo is a strong first source because it is easy to prototype with and can
 serve both web and future mobile clients. Later versions should consider a
 dedicated weather provider if higher-resolution rainfall history becomes critical.
 
-## Fruiting Signal Model v3
+## Fruiting Signal Model v3.1
 
 Each target day now produces a calibrated probability for:
 
@@ -57,7 +57,6 @@ Model metadata is versioned in `src/model.js` and `src/model-metadata.json`:
 
 Highest influence:
 
-- recent nearby observations (7d and 14d)
 - moisture physics features:
   - lag-weighted rainfall (1d/2d/3d with strongest day-2 signal)
   - topsoil moisture (0-7 cm)
@@ -77,6 +76,7 @@ The model intentionally does **not** treat "mushroom season" as a hard blocker.
 - Regional pooling with location/climate covariates.
 - Confidence badge reflects data sparsity and forecast horizon uncertainty.
 - Dry-condition guardrail caps over-optimistic scores when moisture is insufficient.
+- Nearby iNaturalist report counts are context/confidence only and are not primary score drivers.
 
 ## Legacy Heuristic (Retired)
 
