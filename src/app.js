@@ -6,6 +6,7 @@ const state = {
   forestType: "mixed",
   map: null,
   marker: null,
+  regionalStats: null,
   scoredDays: [],
   selected: { latitude: 48.1351, longitude: 8.2319, label: "Black Forest" },
   selectedSuggestion: null,
@@ -37,6 +38,9 @@ const elements = {
   openWeightingButton: document.querySelector("#openWeightingButton"),
   placeLabel: document.querySelector("#placeLabel"),
   previousDayButton: document.querySelector("#previousDayButton"),
+  regionalConfidence: document.querySelector("#regionalConfidence"),
+  regionalCopy: document.querySelector("#regionalCopy"),
+  regionalMetrics: document.querySelector("#regionalMetrics"),
   sampleButton: document.querySelector("#sampleButton"),
   seasonBadge: document.querySelector("#seasonBadge"),
   summaryLabel: document.querySelector("#summaryLabel"),
@@ -119,8 +123,9 @@ function verdictForScore(score) {
   return "Poor conditions";
 }
 
-function confidenceForScore({ rainScore, recentRainScore, habitatScore, elevation, targetIndex, todayIndex }) {
+function confidenceForScore({ rainScore, recentRainScore, habitatScore, elevation, regionalStats, targetIndex, todayIndex }) {
   if (targetIndex - todayIndex > 7) return "Forecast uncertain";
+  if (!regionalStats || regionalStats.confidence === "Sparse data") return "Data limited";
   if (!Number.isFinite(elevation) || habitatScore < 80) return "Habitat limited";
   if (rainScore < 35 || recentRainScore < 35) return "Weather limited";
   return "High confidence";
@@ -228,6 +233,117 @@ async function fetchElevation(latitude, longitude) {
   return payload.elevation?.[0] ?? null;
 }
 
+function isoDaysAgo(days) {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return date.toISOString().slice(0, 10);
+}
+
+async function fetchINaturalistCount(latitude, longitude, extraParams = {}) {
+  const params = new URLSearchParams({
+    iconic_taxa: "Fungi",
+    lat: latitude.toFixed(5),
+    lng: longitude.toFixed(5),
+    per_page: "1",
+    radius: "50",
+    verifiable: "true",
+    ...extraParams,
+  });
+  const response = await fetch(`https://api.inaturalist.org/v1/observations?${params}`);
+  if (!response.ok) throw new Error(`iNaturalist request failed with ${response.status}`);
+  const payload = await response.json();
+  return payload.total_results ?? 0;
+}
+
+function empiricalScoreForStats(stats) {
+  if (!stats || stats.totalObservations < 20) return 58;
+  let score = 45;
+
+  if (stats.seasonalObservations >= 150) score += 25;
+  else if (stats.seasonalObservations >= 60) score += 18;
+  else if (stats.seasonalObservations >= 20) score += 10;
+  else score -= 8;
+
+  if (stats.recent14Observations >= 10) score += 18;
+  else if (stats.recent45Observations >= 25) score += 15;
+  else if (stats.recent45Observations >= 8) score += 8;
+  else if (stats.recent45Observations === 0) score -= 12;
+
+  if (stats.researchRecent45Observations >= 5) score += 8;
+  if (stats.totalObservations >= 300) score += 5;
+
+  return clamp(score, 0, 100);
+}
+
+function confidenceForRegionalStats(stats) {
+  if (!stats || stats.totalObservations < 20) return "Sparse data";
+  if (stats.totalObservations >= 300 && stats.seasonalObservations >= 60) return "Good regional data";
+  if (stats.totalObservations >= 100 && stats.seasonalObservations >= 20) return "Moderate data";
+  return "Sparse data";
+}
+
+function summarizeRegionalStats(stats) {
+  if (!stats || stats.status === "unavailable") {
+    return "Regional observation data is unavailable, so the rating is using the general weather and season model.";
+  }
+  if (stats.totalObservations < 20) {
+    return "There are too few nearby fungi observations to calibrate this region confidently.";
+  }
+  if (stats.recent14Observations >= 10) {
+    return "Recent nearby fungi reports support the weather signal: the region appears active lately.";
+  }
+  if (stats.recent45Observations >= 8) {
+    return "There are some recent regional fungi reports, so the model has empirical support beyond weather alone.";
+  }
+  if (stats.seasonalObservations < 20) {
+    return "This month is historically quiet in nearby observations, so the model keeps the general score cautious.";
+  }
+  return "Historical nearby records support this season, but recent observation activity is limited.";
+}
+
+async function fetchRegionalObservationStats(latitude, longitude, dateString) {
+  const month = String(new Date(`${dateString}T12:00:00`).getUTCMonth() + 1);
+  try {
+    const [totalObservations, seasonalObservations, recent45Observations, recent14Observations, researchRecent45Observations] =
+      await Promise.all([
+        fetchINaturalistCount(latitude, longitude),
+        fetchINaturalistCount(latitude, longitude, { month }),
+        fetchINaturalistCount(latitude, longitude, { d1: isoDaysAgo(45) }),
+        fetchINaturalistCount(latitude, longitude, { d1: isoDaysAgo(14) }),
+        fetchINaturalistCount(latitude, longitude, { d1: isoDaysAgo(45), quality_grade: "research" }),
+      ]);
+    const stats = {
+      confidence: "",
+      empiricalScore: 0,
+      recent14Observations,
+      recent45Observations,
+      researchRecent45Observations,
+      seasonalObservations,
+      source: "iNaturalist",
+      status: "available",
+      totalObservations,
+    };
+    stats.empiricalScore = empiricalScoreForStats(stats);
+    stats.confidence = confidenceForRegionalStats(stats);
+    stats.summary = summarizeRegionalStats(stats);
+    return stats;
+  } catch (error) {
+    console.error(error);
+    return {
+      confidence: "Unavailable",
+      empiricalScore: 58,
+      recent14Observations: 0,
+      recent45Observations: 0,
+      researchRecent45Observations: 0,
+      seasonalObservations: 0,
+      source: "iNaturalist",
+      status: "unavailable",
+      summary: summarizeRegionalStats(null),
+      totalObservations: 0,
+    };
+  }
+}
+
 function normalizeWeather(payload) {
   return payload.daily.time.map((date, index) => ({
     date,
@@ -268,16 +384,18 @@ function scoreDay(days, index, todayIndex) {
   const seasonScore = seasonScoreForDate(target.date, state.selected.latitude);
   const habitatScore = forestScore();
   const terrainScore = elevationScore(state.elevation);
+  const empiricalScore = state.regionalStats?.empiricalScore ?? 58;
 
   const score = Math.round(
-    rainScore * 0.28 +
-      recentRainScore * 0.14 +
-      tempScore * 0.2 +
+    rainScore * 0.26 +
+      recentRainScore * 0.13 +
+      tempScore * 0.19 +
       nightScore * 0.1 +
       stabilityScore * 0.08 +
       seasonScore * 0.08 +
-      habitatScore * 0.08 +
-      terrainScore * 0.04,
+      habitatScore * 0.07 +
+      terrainScore * 0.03 +
+      empiricalScore * 0.06,
   );
 
   return {
@@ -285,6 +403,7 @@ function scoreDay(days, index, todayIndex) {
     avgTemp,
     breakdown: {
       elevation: Math.round(terrainScore),
+      regional: Math.round(empiricalScore),
       habitat: habitatScore,
       moisture: Math.round(rainScore * 0.65 + recentRainScore * 0.35),
       nights: Math.round(nightScore),
@@ -297,6 +416,7 @@ function scoreDay(days, index, todayIndex) {
       habitatScore,
       rainScore,
       recentRainScore,
+      regionalStats: state.regionalStats,
       targetIndex: index,
       todayIndex,
     }),
@@ -464,6 +584,25 @@ function renderSelectedDay() {
   elements.breakdownStrip.innerHTML = Object.entries(selectedDay.breakdown)
     .map(([key, value]) => `<div class="breakdown-pill"><span>${key}</span><strong>${value}</strong></div>`)
     .join("");
+  renderRegionalStats();
+}
+
+function renderRegionalStats() {
+  const stats = state.regionalStats;
+  if (!stats) {
+    elements.regionalConfidence.textContent = "Loading";
+    elements.regionalMetrics.innerHTML = "";
+    elements.regionalCopy.textContent = "Nearby observation data will lightly calibrate the broad conditions read.";
+    return;
+  }
+  elements.regionalConfidence.textContent = stats.confidence;
+  elements.regionalMetrics.innerHTML = `
+    <div class="metric-pill"><span>Recent 14d</span><strong>${stats.recent14Observations}</strong></div>
+    <div class="metric-pill"><span>Recent 45d</span><strong>${stats.recent45Observations}</strong></div>
+    <div class="metric-pill"><span>This month</span><strong>${stats.seasonalObservations}</strong></div>
+    <div class="metric-pill"><span>Regional</span><strong>${Math.round(stats.empiricalScore)}</strong></div>
+  `;
+  elements.regionalCopy.textContent = `${stats.summary} Source: ${stats.source}; 50 km radius; no species suggestions shown.`;
 }
 
 function moveFocus(step) {
@@ -558,13 +697,18 @@ async function analyzeLocation(location, shouldMoveMap = true) {
   setStatus("Loading");
   elements.combinedChart.innerHTML = `<div class="loading">Building the weather timeline...</div>`;
   elements.detailCopy.textContent = "Refreshing weather context for the selected location.";
+  state.regionalStats = null;
+  renderRegionalStats();
 
   try {
-    const [payload, elevation] = await Promise.all([
+    const today = new Date().toISOString().slice(0, 10);
+    const [payload, elevation, regionalStats] = await Promise.all([
       fetchWeather(location.latitude, location.longitude),
       fetchElevation(location.latitude, location.longitude).catch(() => null),
+      fetchRegionalObservationStats(location.latitude, location.longitude, today),
     ]);
     state.elevation = elevation;
+    state.regionalStats = regionalStats;
     const days = normalizeWeather(payload);
     const todayIndex = findTodayIndex(days);
     state.allDays = days.map((_, index) => scoreDay(days, index, todayIndex));

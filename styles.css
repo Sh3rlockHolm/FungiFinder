@@ -255,6 +255,7 @@ select:focus-visible,
 .analysis-panel,
 .chart-card,
 .detail-panel,
+.regional-panel,
 .modal-window {
   display: grid;
   gap: 12px;
@@ -500,9 +501,22 @@ dd {
 
 .chart-card,
 .detail-panel,
+.regional-panel,
 .modal-window {
   padding: 16px;
   background: rgba(251, 252, 247, 0.86);
+}
+
+.regional-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.regional-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
 }
 
 .chart-mount {
@@ -603,6 +617,7 @@ dd {
 }
 
 .detail-metrics,
+.regional-grid,
 .breakdown-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -721,6 +736,7 @@ dd {
 
   .search-form,
   .detail-metrics,
+  .regional-grid,
   .breakdown-strip {
     grid-template-columns: 1fr;
   }

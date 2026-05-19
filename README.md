@@ -14,9 +14,11 @@ the user-experience level before implementation.
 
 - Weather: Open-Meteo forecast API
 - Elevation: Open-Meteo Elevation API
+- Regional observations: iNaturalist observations API
 - Map: OpenStreetMap tiles through Leaflet
 - Inputs: daily precipitation sum, daily mean temperature, daily maximum
-  temperature, daily minimum temperature, selected forest type, elevation
+  temperature, daily minimum temperature, selected forest type, elevation,
+  nearby fungi observation counts
 - Window: 7 past days plus today and 7 forecast days
 - API keys: none required
 
@@ -24,18 +26,19 @@ Open-Meteo is a strong first source because it is easy to prototype with and can
 serve both web and future mobile clients. Later versions should consider a
 dedicated weather provider if higher-resolution rainfall history becomes critical.
 
-## Scoring Model v0.3
+## Scoring Model v0.4
 
 Each target day is scored from a rolling window ending on that day:
 
-- 28% previous 7-day rainfall
-- 14% recent 72-hour rainfall
-- 20% recent average temperature
+- 26% previous 7-day rainfall
+- 13% recent 72-hour rainfall
+- 19% recent average temperature
 - 10% recent nightly minimum temperature
 - 8% recent day-night stability
 - 8% seasonality
-- 8% forest type
-- 4% elevation
+- 7% forest type
+- 3% elevation
+- 6% empirical regional activity from nearby fungi observations
 
 Initial assumptions:
 
@@ -46,9 +49,25 @@ Initial assumptions:
 - Moderate day-night spread is usually better than extreme swings
 - Autumn is strongest in the general case, with spring as a secondary season
 - Forest type and elevation are gentle modifiers, not dominant inputs
+- Nearby observations are used only as a broad regional activity signal; the app
+  does not surface likely species or "potential finds" yet
 
 This is intentionally general. It estimates broad fruiting conditions, not
 species-specific abundance or safety.
+
+## Empirical Regional Signal
+
+For the selected region, the app queries nearby iNaturalist fungi observations
+within a 50 km radius:
+
+- recent 14-day observation count
+- recent 45-day observation count
+- all historical observations in the current calendar month
+- recent research-grade observation count
+
+This produces a conservative regional activity score and data-confidence label.
+If observation data is sparse or unavailable, the app falls back to the general
+weather/season baseline rather than pretending to know more than it does.
 
 ## Product Discussion Needed
 
