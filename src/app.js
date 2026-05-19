@@ -39,6 +39,7 @@ const elements = {
   regionalConfidence: document.querySelector("#regionalConfidence"),
   regionalCopy: document.querySelector("#regionalCopy"),
   regionalMetrics: document.querySelector("#regionalMetrics"),
+  regionalTiles: document.querySelector("#regionalTiles"),
   sampleButton: document.querySelector("#sampleButton"),
   seasonBadge: document.querySelector("#seasonBadge"),
   summaryLabel: document.querySelector("#summaryLabel"),
@@ -257,6 +258,42 @@ async function fetchINaturalistCount(latitude, longitude, extraParams = {}) {
   return payload.total_results ?? 0;
 }
 
+async function fetchINaturalistRecentResearch(latitude, longitude, extraParams = {}) {
+  const params = new URLSearchParams({
+    iconic_taxa: "Fungi",
+    lat: latitude.toFixed(5),
+    lng: longitude.toFixed(5),
+    per_page: "8",
+    radius: "50",
+    verifiable: "true",
+    quality_grade: "research",
+    order: "desc",
+    order_by: "observed_on",
+    ...extraParams,
+  });
+  const response = await fetch(`https://api.inaturalist.org/v1/observations?${params}`);
+  if (!response.ok) throw new Error(`iNaturalist request failed with ${response.status}`);
+  const payload = await response.json();
+  const results = payload.results ?? [];
+  return results.map((item) => {
+    const taxon = item.taxon ?? {};
+    const species =
+      taxon.preferred_common_name ||
+      taxon.name ||
+      item.species_guess ||
+      "Unidentified fungus";
+    const observedOn = item.observed_on || item.time_observed_at?.slice(0, 10) || "";
+    const photo = item.photos?.[0]?.url?.replace("square", "medium") ?? "";
+    return {
+      id: item.id,
+      observedOn,
+      photo,
+      species,
+      url: item.uri || `https://www.inaturalist.org/observations/${item.id}`,
+    };
+  });
+}
+
 function confidenceForRegionalStats(stats) {
   if (!stats || stats.totalObservations < 20) return "Sparse data";
   if (stats.totalObservations >= 200) return "High observer coverage";
@@ -277,13 +314,14 @@ function summarizeRegionalStats(stats) {
 async function fetchRegionalObservationStats(latitude, longitude, dateString) {
   const month = String(new Date(`${dateString}T12:00:00`).getUTCMonth() + 1);
   try {
-    const [totalObservations, seasonalObservations, recent7Observations, recent14Observations, researchRecent14Observations] =
+    const [totalObservations, seasonalObservations, recent7Observations, recent14Observations, researchRecent14Observations, recentResearchObservations] =
       await Promise.all([
         fetchINaturalistCount(latitude, longitude),
         fetchINaturalistCount(latitude, longitude, { month }),
         fetchINaturalistCount(latitude, longitude, { d1: isoDaysAgo(7) }),
         fetchINaturalistCount(latitude, longitude, { d1: isoDaysAgo(14) }),
         fetchINaturalistCount(latitude, longitude, { d1: isoDaysAgo(14), quality_grade: "research" }),
+        fetchINaturalistRecentResearch(latitude, longitude, { d1: isoDaysAgo(30) }),
       ]);
     const stats = {
       confidence: "",
@@ -294,6 +332,7 @@ async function fetchRegionalObservationStats(latitude, longitude, dateString) {
       source: "iNaturalist",
       status: "available",
       totalObservations,
+      recentResearchObservations,
     };
     stats.confidence = confidenceForRegionalStats(stats);
     stats.summary = summarizeRegionalStats(stats);
@@ -310,6 +349,7 @@ async function fetchRegionalObservationStats(latitude, longitude, dateString) {
       status: "unavailable",
       summary: summarizeRegionalStats(null),
       totalObservations: 0,
+      recentResearchObservations: [],
     };
   }
 }
@@ -672,6 +712,7 @@ function renderRegionalStats() {
   if (!stats) {
     elements.regionalConfidence.textContent = "Loading";
     elements.regionalMetrics.innerHTML = "";
+    elements.regionalTiles.innerHTML = "";
     elements.regionalCopy.textContent = "Loading recent nearby iNaturalist fungi observations (within 50 km).";
     return;
   }
@@ -682,6 +723,24 @@ function renderRegionalStats() {
     <div class="metric-pill"><span>Research-grade (14d)</span><strong>${stats.researchRecent14Observations}</strong></div>
     <div class="metric-pill"><span>All nearby reports</span><strong>${stats.totalObservations}</strong></div>
   `;
+  const tiles = stats.recentResearchObservations ?? [];
+  if (!tiles.length) {
+    elements.regionalTiles.innerHTML = `<div class="chart-empty">No recent research-grade observations to show.</div>`;
+  } else {
+    elements.regionalTiles.innerHTML = tiles
+      .map(
+        (obs) => `
+      <a class="observation-tile" href="${obs.url}" target="_blank" rel="noopener noreferrer">
+        <div class="observation-thumb">${obs.photo ? `<img src="${obs.photo}" alt="${obs.species}">` : `<span>No photo</span>`}</div>
+        <div class="observation-meta">
+          <strong>${obs.species}</strong>
+          <span>${obs.observedOn || "Date unknown"}</span>
+        </div>
+      </a>
+    `,
+      )
+      .join("");
+  }
   elements.regionalCopy.textContent = `${stats.summary} Data source: ${stats.source} fungi observations (verifiable), 50 km radius.`;
 }
 
