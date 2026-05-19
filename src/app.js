@@ -496,7 +496,7 @@ function renderRegionalTilesWithSlide(stats, targetPage) {
     currentTrack.remove();
     incoming.classList.remove("incoming", "enter");
     incoming.classList.add("current");
-  }, 340);
+  }, 480);
   state.regionalPage = safePage;
 }
 
