@@ -275,23 +275,34 @@ async function fetchINaturalistRecentResearch(latitude, longitude, extraParams =
   if (!response.ok) throw new Error(`iNaturalist request failed with ${response.status}`);
   const payload = await response.json();
   const results = payload.results ?? [];
-  return results.map((item) => {
+  const deduped = new Map();
+  results.forEach((item) => {
     const taxon = item.taxon ?? {};
-    const species =
+    const speciesRaw =
       taxon.preferred_common_name ||
       taxon.name ||
       item.species_guess ||
       "Unidentified fungus";
+    const species = speciesRaw
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
     const observedOn = item.observed_on || item.time_observed_at?.slice(0, 10) || "";
     const photo = item.photos?.[0]?.url?.replace("square", "medium") ?? "";
-    return {
+    const key = taxon.id ? `taxon:${taxon.id}` : `label:${species.toLowerCase()}`;
+    if (deduped.has(key)) return;
+    deduped.set(key, {
       id: item.id,
       observedOn,
       photo,
       species,
       url: item.uri || `https://www.inaturalist.org/observations/${item.id}`,
-    };
+      wikipediaUrl: taxon.wikipedia_url || "",
+      scientificName: taxon.name || "",
+    });
   });
+  return [...deduped.values()];
 }
 
 function confidenceForRegionalStats(stats) {
@@ -308,7 +319,7 @@ function summarizeRegionalStats(stats) {
   if (stats.totalObservations < 20) {
     return "Few nearby reports exist here, so this section is low confidence and should not be treated as absence of fungi.";
   }
-  return "Nearby reports are shown for context only. They reflect observer presence and access, not true fungal abundance.";
+  return "Research-grade nearby reports are shown for context only. They reflect observer presence and access, not true fungal abundance.";
 }
 
 async function fetchRegionalObservationStats(latitude, longitude, dateString) {
@@ -718,10 +729,8 @@ function renderRegionalStats() {
   }
   elements.regionalConfidence.textContent = stats.confidence;
   elements.regionalMetrics.innerHTML = `
-    <div class="metric-pill"><span>Reports in 7 days</span><strong>${stats.recent7Observations}</strong></div>
-    <div class="metric-pill"><span>Reports in 14 days</span><strong>${stats.recent14Observations}</strong></div>
     <div class="metric-pill"><span>Research-grade (14d)</span><strong>${stats.researchRecent14Observations}</strong></div>
-    <div class="metric-pill"><span>All nearby reports</span><strong>${stats.totalObservations}</strong></div>
+    <div class="metric-pill"><span>Unique species shown</span><strong>${(stats.recentResearchObservations ?? []).length}</strong></div>
   `;
   const tiles = stats.recentResearchObservations ?? [];
   if (!tiles.length) {
@@ -730,18 +739,25 @@ function renderRegionalStats() {
     elements.regionalTiles.innerHTML = tiles
       .map(
         (obs) => `
-      <a class="observation-tile" href="${obs.url}" target="_blank" rel="noopener noreferrer">
+      <div class="observation-tile">
+        <a class="observation-main-link" href="${obs.url}" target="_blank" rel="noopener noreferrer">
         <div class="observation-thumb">${obs.photo ? `<img src="${obs.photo}" alt="${obs.species}">` : `<span>No photo</span>`}</div>
         <div class="observation-meta">
           <strong>${obs.species}</strong>
+          ${obs.scientificName ? `<em>${obs.scientificName}</em>` : ""}
           <span>${obs.observedOn || "Date unknown"}</span>
         </div>
-      </a>
+        </a>
+        <div class="observation-links">
+          <a href="${obs.url}" target="_blank" rel="noopener noreferrer">View on iNaturalist</a>
+          ${obs.wikipediaUrl ? `<a href="${obs.wikipediaUrl}" target="_blank" rel="noopener noreferrer">Wikipedia</a>` : ""}
+        </div>
+      </div>
     `,
       )
       .join("");
   }
-  elements.regionalCopy.textContent = `${stats.summary} Data source: ${stats.source} fungi observations (verifiable), 50 km radius.`;
+  elements.regionalCopy.textContent = `${stats.summary} Tiles are deduplicated by species/taxon. Data source: ${stats.source} fungi observations (verifiable), 50 km radius.`;
 }
 
 function moveFocus(step) {

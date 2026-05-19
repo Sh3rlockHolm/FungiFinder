@@ -700,6 +700,10 @@ dd {
   border-radius: 10px;
   background: rgba(251, 252, 247, 0.95);
   color: inherit;
+}
+
+.observation-main-link {
+  color: inherit;
   text-decoration: none;
 }
 
@@ -737,6 +741,24 @@ dd {
 .observation-meta span {
   font-size: 0.76rem;
   color: var(--muted);
+}
+
+.observation-meta em {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.observation-links {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.observation-links a {
+  font-size: 0.76rem;
+  color: var(--moss);
+  text-decoration: underline;
 }
 
 .metric-pill,
