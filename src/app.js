@@ -305,6 +305,7 @@ async function fetchINaturalistRecentResearch(latitude, longitude, extraParams =
       url: item.uri || `https://www.inaturalist.org/observations/${item.id}`,
       wikipediaUrl: taxon.wikipedia_url || "",
       scientificName: taxon.name || "",
+      qualityGrade: item.quality_grade || "",
       taxonKey: taxon.id ? `taxon:${taxon.id}` : `label:${(taxon.name || speciesRaw || "unknown").toLowerCase()}`,
       identifications_count: item.identifications_count ?? 0,
       identifications_most_agree: item.identifications_most_agree ?? false,
@@ -314,6 +315,69 @@ async function fetchINaturalistRecentResearch(latitude, longitude, extraParams =
       num_identification_disagreements: item.num_identification_disagreements ?? 0,
     };
   });
+  return {
+    observations,
+    totalResults: payload.total_results ?? observations.length,
+  };
+}
+
+async function fetchINaturalistRecentNonResearch(latitude, longitude, extraParams = {}) {
+  const params = new URLSearchParams({
+    iconic_taxa: "Fungi",
+    lat: latitude.toFixed(5),
+    lng: longitude.toFixed(5),
+    per_page: "200",
+    radius: "50",
+    verifiable: "true",
+    quality_grade: "needs_id",
+    order: "desc",
+    order_by: "observed_on",
+    ...extraParams,
+  });
+  const response = await fetch(`https://api.inaturalist.org/v1/observations?${params}`);
+  if (!response.ok) throw new Error(`iNaturalist request failed with ${response.status}`);
+  const payload = await response.json();
+  const results = payload.results ?? [];
+  const observations = results
+    .filter((item) => {
+      const idCount = item.identifications_count ?? 0;
+      const agreements = item.num_identification_agreements ?? 0;
+      const disagreements = item.num_identification_disagreements ?? 0;
+      const mostAgree = item.identifications_most_agree === true || item.identifications_some_agree === true;
+      return idCount >= 2 && agreements >= disagreements && mostAgree;
+    })
+    .map((item) => {
+      const taxon = item.taxon ?? {};
+      const speciesRaw =
+        taxon.preferred_common_name ||
+        taxon.name ||
+        item.species_guess ||
+        "Unidentified fungus";
+      const species = speciesRaw
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+      const observedOn = item.observed_on || item.time_observed_at?.slice(0, 10) || "";
+      const photo = item.photos?.[0]?.url?.replace("square", "medium") ?? "";
+      return {
+        id: item.id,
+        observedOn,
+        photo,
+        species,
+        url: item.uri || `https://www.inaturalist.org/observations/${item.id}`,
+        wikipediaUrl: taxon.wikipedia_url || "",
+        scientificName: taxon.name || "",
+        qualityGrade: item.quality_grade || "",
+        taxonKey: taxon.id ? `taxon:${taxon.id}` : `label:${(taxon.name || speciesRaw || "unknown").toLowerCase()}`,
+        identifications_count: item.identifications_count ?? 0,
+        identifications_most_agree: item.identifications_most_agree ?? false,
+        identifications_some_agree: item.identifications_some_agree ?? false,
+        identifications_most_disagree: item.identifications_most_disagree ?? false,
+        num_identification_agreements: item.num_identification_agreements ?? 0,
+        num_identification_disagreements: item.num_identification_disagreements ?? 0,
+      };
+    });
   return {
     observations,
     totalResults: payload.total_results ?? observations.length,
@@ -373,23 +437,33 @@ function summarizeRegionalStats(stats) {
 }
 
 async function fetchRegionalObservationStats(latitude, longitude, dateString) {
-  const month = String(new Date(`${dateString}T12:00:00`).getUTCMonth() + 1);
   try {
-    const [researchRecent14Observations, researchAll] =
+    const [researchRecent14Observations, researchAll, nonResearchAll] =
       await Promise.all([
         fetchINaturalistCount(latitude, longitude, { d1: isoDaysAgo(14), quality_grade: "research" }),
         fetchINaturalistRecentResearchAll(latitude, longitude, { d1: isoDaysAgo(14) }),
+        fetchINaturalistRecentNonResearch(latitude, longitude, { d1: isoDaysAgo(14) }),
       ]);
-    const deduped = dedupeByBestConfidence(researchAll.observations);
+    const dedupedResearch = dedupeByBestConfidence(researchAll.observations);
+    const dedupedNonResearch = dedupeByBestConfidence(nonResearchAll.observations);
+    const used = new Set(dedupedResearch.map((item) => item.taxonKey));
+    const blended = [...dedupedResearch];
+    for (const item of dedupedNonResearch) {
+      if (blended.length >= 80) break;
+      if (used.has(item.taxonKey)) continue;
+      blended.push(item);
+      used.add(item.taxonKey);
+    }
     const stats = {
       confidence: "",
       researchRecent14Observations,
       researchRecent14Total: researchAll.totalResults,
-      uniqueResearchObservations: deduped,
+      uniqueResearchObservations: blended,
+      uniqueResearchOnlyCount: dedupedResearch.length,
       source: "iNaturalist",
       status: "available",
       totalObservations: researchAll.totalResults,
-      recentResearchObservations: deduped.slice(0, 8),
+      recentResearchObservations: blended.slice(0, 8),
     };
     stats.summary = summarizeRegionalStats(stats);
     return stats;
@@ -408,6 +482,7 @@ async function fetchRegionalObservationStats(latitude, longitude, dateString) {
       recentResearchObservations: [],
       researchRecent14Total: 0,
       uniqueResearchObservations: [],
+      uniqueResearchOnlyCount: 0,
     };
   }
 }
@@ -432,6 +507,7 @@ function buildObservationTilesMarkup(observations) {
       <div class="observation-tile">
         <a class="observation-main-link" href="${obs.url}" target="_blank" rel="noopener noreferrer">
         <div class="observation-thumb">
+          ${obs.qualityGrade === "research" ? `<span class="grade-badge">Research Grade</span>` : ""}
           ${
             obs.photo
               ? `<img src="${obs.photo}" alt="${obs.species}" data-popup-image="${obs.photo}" data-popup-title="${obs.species.replace(/"/g, "&quot;")}">`
@@ -904,7 +980,7 @@ function renderRegionalStats() {
   `;
   const total = (stats.uniqueResearchObservations ?? []).length;
   const pageSize = 8;
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const pageCount = Math.max(1, Math.min(10, Math.ceil(total / pageSize)));
   const currentPage = Math.min(Math.max(1, state.regionalPage || 1), pageCount);
   renderRegionalTilesWithSlide(stats, currentPage);
   elements.regionalPagination.innerHTML = `
