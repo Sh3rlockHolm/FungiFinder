@@ -55,6 +55,8 @@ const dayFormatter = new Intl.DateTimeFormat(undefined, {
   month: "short",
   weekday: "short",
 });
+const weekdayFormatter = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+const monthDayFormatter = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -137,6 +139,14 @@ function setStatus(message) {
 
 function formatTimelineLabel(dateString) {
   return dayFormatter.format(new Date(`${dateString}T12:00:00`));
+}
+
+function formatTimelineLabelParts(dateString) {
+  const date = new Date(`${dateString}T12:00:00`);
+  return {
+    weekday: weekdayFormatter.format(date),
+    monthDay: monthDayFormatter.format(date),
+  };
 }
 
 function getSeasonForDate(dateString, latitude) {
@@ -464,9 +474,14 @@ function renderCombinedChart() {
 
   const containerWidth = Math.round(elements.combinedChart.clientWidth || 920);
   const mobile = containerWidth <= 620;
+  const tablet = containerWidth > 620 && containerWidth <= 900;
   const width = containerWidth;
-  const height = mobile ? 320 : 292;
-  const margin = mobile ? { top: 18, right: 52, bottom: 54, left: 48 } : { top: 18, right: 88, bottom: 42, left: 74 };
+  const height = mobile ? 332 : tablet ? 306 : 292;
+  const margin = mobile
+    ? { top: 16, right: 48, bottom: 74, left: 46 }
+    : tablet
+      ? { top: 16, right: 62, bottom: 54, left: 58 }
+      : { top: 18, right: 88, bottom: 42, left: 74 };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
   const visibleSlots = 15;
@@ -504,7 +519,7 @@ function renderCombinedChart() {
   const markerX = focusIndex >= 0 ? xAt(focusIndex) + targetTranslate : centerX;
   const pastShadeTrackX = todayIndex >= 0 ? xAt(todayIndex) - slotWidth / 2 : null;
 
-  const xLabelStep = mobile ? 3 : 1;
+  const xLabelStep = mobile ? 4 : tablet ? 2 : 1;
   const yTickCount = mobile ? 4 : 5;
 
   elements.combinedChart.innerHTML = `
@@ -551,6 +566,15 @@ function renderCombinedChart() {
         ${maxPoints.map((point, index) => `<circle class="combined-point max" cx="${point.x}" cy="${point.y}" r="${index === focusIndex ? 5 : 4}"></circle>`).join("")}
         ${state.allDays.map((day, index) => {
           if (index % xLabelStep !== 0 && index !== focusIndex && index !== state.allDays.length - 1) return "";
+          if (mobile) {
+            const label = formatTimelineLabelParts(day.date);
+            return `
+              <text class="x-label x-label-mobile" x="${xAt(index)}" y="${height - 26}" text-anchor="middle">
+                <tspan x="${xAt(index)}" dy="0">${label.weekday}</tspan>
+                <tspan class="x-label-sub" x="${xAt(index)}" dy="12">${label.monthDay}</tspan>
+              </text>
+            `;
+          }
           return `<text class="x-label" x="${xAt(index)}" y="${height - 12}" text-anchor="middle">${formatTimelineLabel(day.date)}</text>`;
         }).join("")}
         </g>

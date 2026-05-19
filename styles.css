@@ -549,6 +549,10 @@ dd {
   font-family: var(--font-body);
 }
 
+.x-label-sub {
+  opacity: 0.88;
+}
+
 .combined-bar {
   fill: rgba(75, 120, 144, 0.42);
 }
@@ -742,16 +746,21 @@ dd {
   }
 
   .chart-mount {
-    min-height: 320px;
+    min-height: 332px;
   }
 
   .chart-svg {
-    height: 320px;
+    height: 332px;
   }
 
   .x-label,
   .y-label {
-    font-size: 10px;
+    font-size: 10.5px;
+  }
+
+  .x-label-mobile {
+    font-weight: 700;
+    letter-spacing: 0;
   }
 
   .icon-button {
