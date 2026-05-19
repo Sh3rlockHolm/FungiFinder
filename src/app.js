@@ -1,7 +1,6 @@
 const state = {
   allDays: [],
   animationFromIndex: null,
-  elevation: null,
   focusDate: null,
   forestType: "mixed",
   map: null,
@@ -125,10 +124,10 @@ function verdictForScore(score) {
   return "Poor conditions";
 }
 
-function confidenceForScore({ rainScore, recentRainScore, habitatScore, elevation, regionalStats, targetIndex, todayIndex }) {
+function confidenceForScore({ rainScore, recentRainScore, habitatScore, regionalStats, targetIndex, todayIndex }) {
   if (targetIndex - todayIndex > 7) return "Forecast uncertain";
   if (!regionalStats || regionalStats.confidence === "Sparse data") return "Data limited";
-  if (!Number.isFinite(elevation) || habitatScore < 80) return "Habitat limited";
+  if (habitatScore < 80) return "Habitat limited";
   if (rainScore < 35 || recentRainScore < 35) return "Weather limited";
   return "High confidence";
 }
@@ -186,15 +185,7 @@ function forestScore() {
   return scores[state.forestType] ?? 84;
 }
 
-function elevationScore(elevation) {
-  if (!Number.isFinite(elevation)) return 70;
-  if (elevation < 40) return 64;
-  if (elevation <= 900) return 92;
-  if (elevation <= 1700) return 78;
-  return 48;
-}
-
-function buildReasons({ rain7, rain72h, avgTemp, nightlyMin, stabilityScore, elevation }) {
+function buildReasons({ rain7, rain72h, avgTemp, nightlyMin, stabilityScore }) {
   const reasons = [];
   if (rain7 < 5) reasons.push("The previous week looks too dry.");
   else if (rain7 <= 45) reasons.push("Weekly rainfall is in a useful fruiting range.");
@@ -213,7 +204,6 @@ function buildReasons({ rain7, rain72h, avgTemp, nightlyMin, stabilityScore, ele
   else if (nightlyMin < 4) reasons.push("Cold nights reduce confidence.");
 
   if (stabilityScore > 70) reasons.push("Temperature swings are moderate, which helps general growth.");
-  if (Number.isFinite(elevation)) reasons.push(`Elevation context is included at ${Math.round(elevation)} m.`);
 
   return reasons.slice(0, 3);
 }
@@ -230,17 +220,6 @@ async function fetchWeather(latitude, longitude) {
   const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`);
   if (!response.ok) throw new Error(`Weather request failed with ${response.status}`);
   return response.json();
-}
-
-async function fetchElevation(latitude, longitude) {
-  const params = new URLSearchParams({
-    latitude: latitude.toFixed(5),
-    longitude: longitude.toFixed(5),
-  });
-  const response = await fetch(`https://api.open-meteo.com/v1/elevation?${params}`);
-  if (!response.ok) throw new Error(`Elevation request failed with ${response.status}`);
-  const payload = await response.json();
-  return payload.elevation?.[0] ?? null;
 }
 
 function isoDaysAgo(days) {
@@ -393,7 +372,6 @@ function scoreDay(days, index, todayIndex) {
   const season = getSeasonForDate(target.date, state.selected.latitude);
   const seasonScore = seasonScoreForDate(target.date, state.selected.latitude);
   const habitatScore = forestScore();
-  const terrainScore = elevationScore(state.elevation);
   const empiricalScore = state.regionalStats?.empiricalScore ?? 58;
 
   const score = Math.round(
@@ -403,8 +381,7 @@ function scoreDay(days, index, todayIndex) {
       nightScore * 0.1 +
       stabilityScore * 0.08 +
       seasonScore * 0.08 +
-      habitatScore * 0.07 +
-      terrainScore * 0.03 +
+      habitatScore * 0.1 +
       empiricalScore * 0.06,
   );
 
@@ -412,7 +389,6 @@ function scoreDay(days, index, todayIndex) {
     ...target,
     avgTemp,
     breakdown: {
-      elevation: Math.round(terrainScore),
       regional: Math.round(empiricalScore),
       habitat: habitatScore,
       moisture: Math.round(rainScore * 0.65 + recentRainScore * 0.35),
@@ -422,7 +398,6 @@ function scoreDay(days, index, todayIndex) {
       temperature: Math.round(tempScore),
     },
     confidence: confidenceForScore({
-      elevation: state.elevation,
       habitatScore,
       rainScore,
       recentRainScore,
@@ -437,7 +412,7 @@ function scoreDay(days, index, todayIndex) {
     score: clamp(score, 0, 100),
     season,
     verdict: verdictForScore(score),
-    reasons: buildReasons({ rain7, rain72h, avgTemp, nightlyMin, stabilityScore, elevation: state.elevation }),
+    reasons: buildReasons({ rain7, rain72h, avgTemp, nightlyMin, stabilityScore }),
   };
 }
 
@@ -634,7 +609,7 @@ function renderRegionalStats() {
     <div class="metric-pill"><span>This month</span><strong>${stats.seasonalObservations}</strong></div>
     <div class="metric-pill"><span>Regional</span><strong>${Math.round(stats.empiricalScore)}</strong></div>
   `;
-  elements.regionalCopy.textContent = `${stats.summary} Source: ${stats.source}; 50 km radius; no species suggestions shown.`;
+  elements.regionalCopy.textContent = `${stats.summary} Source: ${stats.source}; 50 km radius.`;
 }
 
 function moveFocus(step) {
@@ -734,12 +709,10 @@ async function analyzeLocation(location, shouldMoveMap = true) {
 
   try {
     const today = new Date().toISOString().slice(0, 10);
-    const [payload, elevation, regionalStats] = await Promise.all([
+    const [payload, regionalStats] = await Promise.all([
       fetchWeather(location.latitude, location.longitude),
-      fetchElevation(location.latitude, location.longitude).catch(() => null),
       fetchRegionalObservationStats(location.latitude, location.longitude, today),
     ]);
-    state.elevation = elevation;
     state.regionalStats = regionalStats;
     const days = normalizeWeather(payload);
     const todayIndex = findTodayIndex(days);
@@ -748,8 +721,7 @@ async function analyzeLocation(location, shouldMoveMap = true) {
     state.focusDate = state.scoredDays[0]?.date ?? null;
     renderCombinedChart();
     renderSelectedDay();
-    const elevationText = Number.isFinite(state.elevation) ? ` Elevation: ${Math.round(state.elevation)} m.` : "";
-    elements.contextCopy.textContent = `${state.forestType.replace("-", " ")} forest gently modifies the broad conditions signal.${elevationText}`;
+    elements.contextCopy.textContent = `${state.forestType.replace("-", " ")} forest gently modifies the broad conditions signal.`;
     setStatus("Updated");
   } catch (error) {
     console.error(error);
