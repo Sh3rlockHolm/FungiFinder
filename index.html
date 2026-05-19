@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FungiFinder</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIINfQO8jQ6fQX9mSfjT07U7F4D5W5N2r8E="
+      crossorigin=""
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="control-pane" aria-label="Foraging location and forecast">
+        <header class="brand">
+          <div>
+            <p class="eyebrow">Weather-based field signal</p>
+            <h1>FungiFinder</h1>
+          </div>
+          <span class="status-pill" id="dataStatus">Ready</span>
+        </header>
+
+        <div class="location-actions" aria-label="Location controls">
+          <button id="useLocationButton" class="primary-button" type="button">
+            Use my location
+          </button>
+          <button id="sampleButton" class="ghost-button" type="button">
+            Try Black Forest
+          </button>
+        </div>
+
+        <form class="coordinate-form search-form" id="coordinateForm">
+          <label class="search-label" for="locationInput">
+            Location or coordinates
+            <input
+              autocomplete="off"
+              id="locationInput"
+              name="location"
+              value="Black Forest"
+              placeholder="Place name or latitude, longitude"
+            />
+            <div class="location-suggestions" id="locationSuggestions" hidden></div>
+          </label>
+          <button class="icon-button" type="submit" aria-label="Analyze location" title="Analyze location">
+            Go
+          </button>
+        </form>
+
+        <section class="context-panel" aria-label="General habitat context">
+          <div class="context-heading">
+            <div>
+              <p class="eyebrow">General habitat context</p>
+              <h2>Growth profile</h2>
+            </div>
+            <span class="status-pill" id="seasonBadge">Seasonal read</span>
+          </div>
+            <div class="context-grid">
+              <label for="forestTypeSelect">
+                Forest type
+                <select id="forestTypeSelect">
+                  <option value="mixed">Mixed woodland</option>
+                  <option value="conifer">Conifer-dominant</option>
+                <option value="deciduous">Deciduous-dominant</option>
+                <option value="riparian">Riparian / wet woodland</option>
+              </select>
+            </label>
+            </div>
+          <p class="context-copy" id="contextCopy">
+            Weather is primary. Forest type and seasonality gently shape the
+            general fruiting signal.
+          </p>
+        </section>
+
+        <div class="summary-band" id="summaryBand">
+          <span class="score-label" id="summaryLabel">Selected day</span>
+          <strong id="todayScore">--</strong>
+          <span id="todayVerdict">Choose a location to begin.</span>
+          <span class="confidence-pill" id="confidenceBadge">Planner confidence</span>
+        </div>
+
+        <section class="method-panel" aria-label="Scoring method">
+          <h2>General conditions model</h2>
+          <p>
+            The score is a conditions signal for broad mushroom activity. It combines
+            weather, season, habitat, and elevation, but does not identify species.
+          </p>
+          <dl>
+            <div>
+              <dt>Now</dt>
+              <dd>General mushroom conditions only, not species-specific.</dd>
+            </div>
+            <div>
+              <dt>Context</dt>
+              <dd>Forest type and elevation gently modify the baseline rating.</dd>
+            </div>
+            <div>
+              <dt>Later</dt>
+              <dd>Broader product direction should be discussed before adding workflows.</dd>
+            </div>
+          </dl>
+        </section>
+      </section>
+
+      <section class="map-pane" aria-label="Map and daily prognosis">
+        <div id="map" aria-label="Select a map location"></div>
+        <section class="forecast-panel" aria-label="Daily mushroom prognosis">
+          <div class="forecast-heading">
+            <div>
+              <p class="eyebrow">Present day plus one week</p>
+              <h2>Foraging Outlook</h2>
+            </div>
+            <span id="placeLabel">48.1351, 8.2319</span>
+          </div>
+          <section class="analysis-panel" aria-label="Selected day evidence">
+            <div class="analysis-header">
+              <div>
+                <p class="eyebrow">Weather evidence</p>
+                <h3 id="analysisTitle">Today</h3>
+              </div>
+              <p class="analysis-copy" id="analysisCopy">
+                Swipe or use the arrow controls to move through the timeline.
+              </p>
+            </div>
+            <div class="timeline-controls">
+              <button class="ghost-button timeline-button" id="previousDayButton" type="button" aria-label="Previous day">
+                Previous
+              </button>
+              <span class="chart-unit">Temp + rain</span>
+              <button class="ghost-button timeline-button" id="nextDayButton" type="button" aria-label="Next day">
+                Next
+              </button>
+            </div>
+            <section class="chart-card" id="chartCard" aria-label="Combined weather timeline">
+              <div class="chart-card-header">
+                <div>
+                  <h4>General conditions timeline</h4>
+                  <p>Rainfall bars with min, average, and max temperature curves.</p>
+                </div>
+                <span class="chart-unit">7 days back, 7 ahead</span>
+              </div>
+              <div class="chart-mount chart-mount-wide" id="combinedChart" tabindex="0"></div>
+            </section>
+            <section class="detail-panel" id="detailPanel" aria-label="Selected day detail">
+              <div class="detail-header">
+                <div>
+                  <p class="eyebrow">Highlighted day</p>
+                  <h4 id="detailDateLabel">Today</h4>
+                </div>
+                <div class="detail-score">
+                  <strong id="detailScore">--</strong>
+                  <span id="detailVerdict">--</span>
+                </div>
+              </div>
+              <div class="detail-metrics" id="detailMetrics"></div>
+              <button class="ghost-button weighting-button" id="openWeightingButton" type="button">
+                See model weighting
+              </button>
+              <p class="detail-copy" id="detailCopy">
+                The highlighted day explains how general growing conditions line up at that point in the timeline.
+              </p>
+            </section>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <div class="modal-backdrop" id="weightingModal" hidden>
+      <div class="modal-window" role="dialog" aria-modal="true" aria-labelledby="weightingTitle">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Model weighting</p>
+            <h3 id="weightingTitle">Condition score breakdown</h3>
+          </div>
+          <button class="icon-button modal-close" id="closeWeightingButton" type="button" aria-label="Close model weighting">
+            X
+          </button>
+        </div>
+        <div class="breakdown-strip" id="breakdownStrip"></div>
+      </div>
+    </div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>
