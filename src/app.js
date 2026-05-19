@@ -338,15 +338,7 @@ async function fetchINaturalistRecentNonResearch(latitude, longitude, extraParam
   if (!response.ok) throw new Error(`iNaturalist request failed with ${response.status}`);
   const payload = await response.json();
   const results = payload.results ?? [];
-  const observations = results
-    .filter((item) => {
-      const idCount = item.identifications_count ?? 0;
-      const agreements = item.num_identification_agreements ?? 0;
-      const disagreements = item.num_identification_disagreements ?? 0;
-      const mostAgree = item.identifications_most_agree === true || item.identifications_some_agree === true;
-      return idCount >= 2 && agreements >= disagreements && mostAgree;
-    })
-    .map((item) => {
+  const observations = results.map((item) => {
       const taxon = item.taxon ?? {};
       const speciesRaw =
         taxon.preferred_common_name ||
@@ -382,6 +374,45 @@ async function fetchINaturalistRecentNonResearch(latitude, longitude, extraParam
     observations,
     totalResults: payload.total_results ?? observations.length,
   };
+}
+
+async function fetchINaturalistRecentNonResearchAll(latitude, longitude, extraParams = {}) {
+  const perPage = 200;
+  let page = 1;
+  let totalResults = 0;
+  const all = [];
+  while (page <= 5) {
+    const result = await fetchINaturalistRecentNonResearch(latitude, longitude, {
+      ...extraParams,
+      per_page: String(perPage),
+      page: String(page),
+    });
+    if (page === 1) totalResults = result.totalResults;
+    all.push(...result.observations);
+    if (!result.observations.length || all.length >= totalResults) break;
+    page += 1;
+  }
+  return { observations: all, totalResults };
+}
+
+function nonResearchConfidenceScore(item) {
+  const agree = item.identifications_most_agree === true ? 1 : 0;
+  const someAgree = item.identifications_some_agree === true ? 1 : 0;
+  const disagree = item.identifications_most_disagree === true ? 1 : 0;
+  const idCount = Number.isFinite(item.identifications_count) ? item.identifications_count : 0;
+  const agreements = Number.isFinite(item.num_identification_agreements) ? item.num_identification_agreements : 0;
+  const disagreements = Number.isFinite(item.num_identification_disagreements) ? item.num_identification_disagreements : 0;
+  const hasScientific = item.scientificName ? 1 : 0;
+  return agree * 90 + someAgree * 45 + agreements * 12 + idCount * 7 + hasScientific * 8 - disagreements * 10 - disagree * 90;
+}
+
+function isSufficientNonResearch(item) {
+  const idCount = item.identifications_count ?? 0;
+  const agreements = item.num_identification_agreements ?? 0;
+  const disagreements = item.num_identification_disagreements ?? 0;
+  const supportive = item.identifications_some_agree === true || item.identifications_most_agree === true || agreements >= 1;
+  const stronglyConflicted = item.identifications_most_disagree === true && disagreements > agreements;
+  return idCount >= 1 && supportive && !stronglyConflicted;
 }
 
 function observationConfidenceScore(item) {
@@ -442,10 +473,16 @@ async function fetchRegionalObservationStats(latitude, longitude, dateString) {
       await Promise.all([
         fetchINaturalistCount(latitude, longitude, { d1: isoDaysAgo(14), quality_grade: "research" }),
         fetchINaturalistRecentResearchAll(latitude, longitude, { d1: isoDaysAgo(14) }),
-        fetchINaturalistRecentNonResearch(latitude, longitude, { d1: isoDaysAgo(14) }),
+        fetchINaturalistRecentNonResearchAll(latitude, longitude, { d1: isoDaysAgo(14) }),
       ]);
     const dedupedResearch = dedupeByBestConfidence(researchAll.observations);
-    const dedupedNonResearch = dedupeByBestConfidence(nonResearchAll.observations);
+    const dedupedNonResearch = dedupeByBestConfidence(nonResearchAll.observations)
+      .filter((item) => isSufficientNonResearch(item))
+      .sort((a, b) => {
+        const scoreDelta = nonResearchConfidenceScore(b) - nonResearchConfidenceScore(a);
+        if (scoreDelta !== 0) return scoreDelta;
+        return (b.id ?? 0) - (a.id ?? 0);
+      });
     const used = new Set(dedupedResearch.map((item) => item.taxonKey));
     const blended = [...dedupedResearch];
     for (const item of dedupedNonResearch) {
