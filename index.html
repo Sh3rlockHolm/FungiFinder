@@ -28,7 +28,7 @@
             Use my location
           </button>
           <button id="sampleButton" class="ghost-button" type="button">
-            Try Black Forest
+            Try Darien, CT
           </button>
         </div>
 
@@ -39,7 +39,7 @@
               autocomplete="off"
               id="locationInput"
               name="location"
-              value="Black Forest"
+              value="Darien, CT"
               placeholder="Place name or latitude, longitude"
             />
             <div class="location-suggestions" id="locationSuggestions" hidden></div>
@@ -68,24 +68,21 @@
               </select>
             </label>
             </div>
-          <p class="context-copy" id="contextCopy">
-            Weather is primary. Forest type and seasonality gently shape the
-            general fruiting signal.
-          </p>
+          <p class="context-copy" id="contextCopy">Forest type gently adjusts the local baseline signal.</p>
         </section>
 
         <div class="summary-band" id="summaryBand">
           <span class="score-label" id="summaryLabel">Selected day</span>
           <strong id="todayScore">--</strong>
           <span id="todayVerdict">Choose a location to begin.</span>
-          <span class="confidence-pill" id="confidenceBadge">Planner confidence</span>
+          <span class="confidence-pill" id="confidenceBadge">Confidence</span>
         </div>
 
         <section class="method-panel" aria-label="Scoring method">
           <h2>General conditions model</h2>
           <p>
-            The score is a conditions signal for broad mushroom activity. It combines
-            weather, season, habitat, and elevation, but does not identify species.
+            A broad conditions signal based on recent weather, seasonality, habitat context,
+            and nearby observation activity.
           </p>
           <dl>
             <div>
@@ -94,11 +91,11 @@
             </div>
             <div>
               <dt>Context</dt>
-              <dd>Forest type and elevation gently modify the baseline rating.</dd>
+              <dd>Forest type and nearby observation activity refine the baseline rating.</dd>
             </div>
             <div>
-              <dt>Later</dt>
-              <dd>Broader product direction should be discussed before adding workflows.</dd>
+              <dt>Scope</dt>
+              <dd>General conditions only.</dd>
             </div>
           </dl>
         </section>
@@ -112,7 +109,7 @@
               <p class="eyebrow">Present day plus one week</p>
               <h2>Foraging Outlook</h2>
             </div>
-            <span id="placeLabel">48.1351, 8.2319</span>
+            <span id="placeLabel">41.0772, -73.4687</span>
           </div>
           <section class="analysis-panel" aria-label="Selected day evidence">
             <div class="analysis-header">
@@ -121,18 +118,10 @@
                 <h3 id="analysisTitle">Today</h3>
               </div>
               <p class="analysis-copy" id="analysisCopy">
-                Swipe or use the arrow controls to move through the timeline.
+                Tap a day below or in the chart to inspect it.
               </p>
             </div>
-            <div class="timeline-controls">
-              <button class="ghost-button timeline-button" id="previousDayButton" type="button" aria-label="Previous day">
-                Previous
-              </button>
-              <span class="chart-unit">Temp + rain</span>
-              <button class="ghost-button timeline-button" id="nextDayButton" type="button" aria-label="Next day">
-                Next
-              </button>
-            </div>
+            <div class="timeline-controls" id="daySelector" aria-label="Choose day"></div>
             <section class="chart-card" id="chartCard" aria-label="Combined weather timeline">
               <div class="chart-card-header">
                 <div>
@@ -155,9 +144,7 @@
                 </div>
               </div>
               <div class="detail-metrics" id="detailMetrics"></div>
-              <button class="ghost-button weighting-button" id="openWeightingButton" type="button">
-                See model weighting
-              </button>
+              <button class="ghost-button weighting-button" id="openWeightingButton" type="button">Model detail</button>
               <p class="detail-copy" id="detailCopy">
                 The highlighted day explains how general growing conditions line up at that point in the timeline.
               </p>
@@ -172,7 +159,7 @@
               </div>
               <div class="regional-grid" id="regionalMetrics"></div>
               <p class="detail-copy" id="regionalCopy">
-                Nearby observation data will lightly calibrate the broad conditions read.
+                Nearby observation data calibrates the score.
               </p>
             </section>
           </section>

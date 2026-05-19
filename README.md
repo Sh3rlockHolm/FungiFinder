@@ -13,11 +13,10 @@ the user-experience level before implementation.
 ## Current Data Sources
 
 - Weather: Open-Meteo forecast API
-- Elevation: Open-Meteo Elevation API
 - Regional observations: iNaturalist observations API
 - Map: OpenStreetMap tiles through Leaflet
 - Inputs: daily precipitation sum, daily mean temperature, daily maximum
-  temperature, daily minimum temperature, selected forest type, elevation,
+  temperature, daily minimum temperature, selected forest type,
   nearby fungi observation counts
 - Window: 7 past days plus today and 7 forecast days
 - API keys: none required
@@ -37,7 +36,6 @@ Each target day is scored from a rolling window ending on that day:
 - 8% recent day-night stability
 - 8% seasonality
 - 7% forest type
-- 3% elevation
 - 6% empirical regional activity from nearby fungi observations
 
 Initial assumptions:
@@ -48,7 +46,7 @@ Initial assumptions:
 - Frost below about -1 C is a strong negative signal
 - Moderate day-night spread is usually better than extreme swings
 - Autumn is strongest in the general case, with spring as a secondary season
-- Forest type and elevation are gentle modifiers, not dominant inputs
+- Forest type is a gentle modifier, not a dominant input
 - Nearby observations are used only as a broad regional activity signal; the app
   does not surface likely species or "potential finds" yet
 
@@ -88,7 +86,6 @@ chosen deliberately.
 The best long-term shape is a shared TypeScript domain core:
 
 - `weather`: provider adapters and normalized daily weather records
-- `terrain`: elevation and future terrain context
 - `predictor`: scoring model, species profiles, regional seasonality
 - `ui-web`: browser/desktop interface
 - `ui-mobile`: Expo/React Native interface for iOS and Android

@@ -12,6 +12,7 @@ const state = {
   suggestionRequestId: 0,
   suggestionTimer: null,
   suggestions: [],
+  chartLayout: null,
   touchStartX: null,
 };
 
@@ -33,10 +34,9 @@ const elements = {
   forestTypeSelect: document.querySelector("#forestTypeSelect"),
   locationInput: document.querySelector("#locationInput"),
   locationSuggestions: document.querySelector("#locationSuggestions"),
-  nextDayButton: document.querySelector("#nextDayButton"),
   openWeightingButton: document.querySelector("#openWeightingButton"),
   placeLabel: document.querySelector("#placeLabel"),
-  previousDayButton: document.querySelector("#previousDayButton"),
+  daySelector: document.querySelector("#daySelector"),
   regionalConfidence: document.querySelector("#regionalConfidence"),
   regionalCopy: document.querySelector("#regionalCopy"),
   regionalMetrics: document.querySelector("#regionalMetrics"),
@@ -453,7 +453,7 @@ function renderCombinedChart() {
   const width = containerWidth;
   const height = mobile ? 332 : tablet ? 306 : 292;
   const margin = mobile
-    ? { top: 16, right: 48, bottom: 74, left: 46 }
+    ? { top: 14, right: 36, bottom: 62, left: 36 }
     : tablet
       ? { top: 16, right: 62, bottom: 54, left: 58 }
       : { top: 18, right: 88, bottom: 42, left: 74 };
@@ -557,6 +557,12 @@ function renderCombinedChart() {
       <line class="target-marker" x1="${markerX}" y1="${margin.top}" x2="${markerX}" y2="${margin.top + plotHeight}"></line>
     </svg>
   `;
+  state.chartLayout = {
+    focusIndex,
+    slotWidth,
+    targetTranslate,
+    xAt,
+  };
   const track = elements.combinedChart.querySelector(".combined-chart-track");
   if (track) {
     requestAnimationFrame(() => {
@@ -564,6 +570,25 @@ function renderCombinedChart() {
     });
   }
   state.animationFromIndex = null;
+}
+
+function renderDaySelector() {
+  if (!state.scoredDays.length) {
+    elements.daySelector.innerHTML = "";
+    return;
+  }
+  elements.daySelector.innerHTML = state.scoredDays
+    .map((day) => {
+      const parts = formatTimelineLabelParts(day.date);
+      const isActive = day.date === state.focusDate;
+      return `
+        <button class="day-chip${isActive ? " is-active" : ""}" type="button" data-day="${day.date}" aria-pressed="${isActive}">
+          <span>${parts.weekday}</span>
+          <strong>${parts.monthDay}</strong>
+        </button>
+      `;
+    })
+    .join("");
 }
 
 function renderSelectedDay() {
@@ -576,7 +601,7 @@ function renderSelectedDay() {
   elements.todayVerdict.textContent = selectedDay.verdict;
   elements.confidenceBadge.textContent = selectedDay.confidence;
   elements.analysisTitle.textContent = `${label} evidence`;
-  elements.analysisCopy.textContent = "The highlighted day stays centered while the surrounding 7 previous and 7 following days move around it.";
+  elements.analysisCopy.textContent = "Tap any day to compare conditions while keeping the selected day centered.";
   elements.seasonBadge.textContent = `${selectedDay.season} season`;
   elements.detailDateLabel.textContent = label;
   elements.detailScore.textContent = `${selectedDay.score}/100`;
@@ -592,6 +617,7 @@ function renderSelectedDay() {
     .map(([key, value]) => `<div class="breakdown-pill"><span>${key}</span><strong>${value}</strong></div>`)
     .join("");
   renderRegionalStats();
+  renderDaySelector();
 }
 
 function renderRegionalStats() {
@@ -619,6 +645,15 @@ function moveFocus(step) {
   if (next === index) return;
   state.animationFromIndex = state.allDays.findIndex((day) => day.date === state.focusDate);
   state.focusDate = state.scoredDays[next].date;
+  renderCombinedChart();
+  renderSelectedDay();
+}
+
+function setFocusDate(date) {
+  const nextIndex = state.scoredDays.findIndex((day) => day.date === date);
+  if (nextIndex < 0 || state.scoredDays[nextIndex].date === state.focusDate) return;
+  state.animationFromIndex = state.allDays.findIndex((day) => day.date === state.focusDate);
+  state.focusDate = state.scoredDays[nextIndex].date;
   renderCombinedChart();
   renderSelectedDay();
 }
@@ -811,8 +846,11 @@ elements.forestTypeSelect.addEventListener("change", () => {
   state.forestType = elements.forestTypeSelect.value;
   analyzeLocation(state.selected, false);
 });
-elements.previousDayButton.addEventListener("click", () => moveFocus(-1));
-elements.nextDayButton.addEventListener("click", () => moveFocus(1));
+elements.daySelector.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-day]");
+  if (!button) return;
+  setFocusDate(button.dataset.day);
+});
 elements.combinedChart.addEventListener("keydown", (event) => {
   if (event.key === "ArrowLeft") {
     event.preventDefault();
@@ -832,6 +870,19 @@ elements.combinedChart.addEventListener("touchend", (event) => {
   const delta = endX - state.touchStartX;
   if (Math.abs(delta) > 24) moveFocus(delta < 0 ? 1 : -1);
   state.touchStartX = null;
+});
+elements.combinedChart.addEventListener("click", (event) => {
+  if (!state.chartLayout || !state.allDays.length) return;
+  const rect = elements.combinedChart.getBoundingClientRect();
+  const localX = event.clientX - rect.left;
+  const trackX = localX - state.chartLayout.targetTranslate;
+  const firstX = state.chartLayout.xAt(0);
+  const index = Math.round((trackX - firstX) / state.chartLayout.slotWidth);
+  const clamped = clamp(index, 0, state.allDays.length - 1);
+  const clicked = state.allDays[clamped];
+  if (!clicked) return;
+  const inSelectableRange = state.scoredDays.some((day) => day.date === clicked.date);
+  if (inSelectableRange) setFocusDate(clicked.date);
 });
 elements.openWeightingButton.addEventListener("click", openWeightingModal);
 elements.closeWeightingButton.addEventListener("click", closeWeightingModal);
