@@ -11,6 +11,7 @@ const state = {
   scoredDays: [],
   selected: { latitude: 41.0772, longitude: -73.4687, label: "Darien, CT" },
   regionalPage: 1,
+  regionalTilePages: new Map(),
   selectedSuggestion: null,
   suggestionRequestId: 0,
   suggestionTimer: null,
@@ -307,6 +308,59 @@ async function fetchINaturalistRecentResearch(latitude, longitude, extraParams =
   };
 }
 
+function observationConfidenceScore(item) {
+  const agree = item.identifications_most_agree === true ? 1 : 0;
+  const someAgree = item.identifications_some_agree === true ? 1 : 0;
+  const disagree = item.identifications_most_disagree === true ? 1 : 0;
+  const idCount = Number.isFinite(item.identifications_count) ? item.identifications_count : 0;
+  const agreements = Number.isFinite(item.num_identification_agreements) ? item.num_identification_agreements : 0;
+  const disagreements = Number.isFinite(item.num_identification_disagreements) ? item.num_identification_disagreements : 0;
+  return agree * 1000 + someAgree * 200 + agreements * 10 + idCount - disagreements * 6 - disagree * 120;
+}
+
+function dedupeByBestConfidence(observations) {
+  const bestByKey = new Map();
+  observations.forEach((item) => {
+    const taxonId = item.taxon?.id;
+    const labelKey =
+      item.taxon?.name?.toLowerCase() ||
+      item.species_guess?.toLowerCase() ||
+      item.taxon?.preferred_common_name?.toLowerCase() ||
+      "unknown";
+    const key = taxonId ? `taxon:${taxonId}` : `label:${labelKey}`;
+    const current = bestByKey.get(key);
+    if (!current) {
+      bestByKey.set(key, item);
+      return;
+    }
+    const currentScore = observationConfidenceScore(current);
+    const nextScore = observationConfidenceScore(item);
+    if (nextScore > currentScore || (nextScore === currentScore && (item.id ?? 0) > (current.id ?? 0))) {
+      bestByKey.set(key, item);
+    }
+  });
+  return [...bestByKey.values()];
+}
+
+async function fetchINaturalistRecentResearchAll(latitude, longitude, extraParams = {}) {
+  const perPage = 200;
+  let page = 1;
+  let totalResults = 0;
+  const all = [];
+  while (page <= 5) {
+    const result = await fetchINaturalistRecentResearch(latitude, longitude, {
+      ...extraParams,
+      per_page: String(perPage),
+      page: String(page),
+    });
+    if (page === 1) totalResults = result.totalResults;
+    all.push(...result.observations);
+    if (!result.observations.length || all.length >= totalResults) break;
+    page += 1;
+  }
+  return { observations: all, totalResults };
+}
+
 function summarizeRegionalStats(stats) {
   if (!stats || stats.status === "unavailable") return "";
   return "";
@@ -315,26 +369,21 @@ function summarizeRegionalStats(stats) {
 async function fetchRegionalObservationStats(latitude, longitude, dateString) {
   const month = String(new Date(`${dateString}T12:00:00`).getUTCMonth() + 1);
   try {
-    const [totalObservations, seasonalObservations, recent7Observations, recent14Observations, researchRecent14Observations, researchPage] =
+    const [researchRecent14Observations, researchAll] =
       await Promise.all([
-        fetchINaturalistCount(latitude, longitude),
-        fetchINaturalistCount(latitude, longitude, { month }),
-        fetchINaturalistCount(latitude, longitude, { d1: isoDaysAgo(7) }),
-        fetchINaturalistCount(latitude, longitude, { d1: isoDaysAgo(14) }),
         fetchINaturalistCount(latitude, longitude, { d1: isoDaysAgo(14), quality_grade: "research" }),
-        fetchINaturalistRecentResearch(latitude, longitude, { d1: isoDaysAgo(14), page: "1", per_page: "8" }),
+        fetchINaturalistRecentResearchAll(latitude, longitude, { d1: isoDaysAgo(14) }),
       ]);
+    const deduped = dedupeByBestConfidence(researchAll.observations);
     const stats = {
       confidence: "",
-      recent7Observations,
-      recent14Observations,
       researchRecent14Observations,
-      researchRecent14Total: researchPage.totalResults,
-      seasonalObservations,
+      researchRecent14Total: researchAll.totalResults,
+      uniqueResearchObservations: deduped,
       source: "iNaturalist",
       status: "available",
-      totalObservations,
-      recentResearchObservations: researchPage.observations,
+      totalObservations: researchAll.totalResults,
+      recentResearchObservations: deduped.slice(0, 8),
     };
     stats.summary = summarizeRegionalStats(stats);
     return stats;
@@ -352,6 +401,7 @@ async function fetchRegionalObservationStats(latitude, longitude, dateString) {
       totalObservations: 0,
       recentResearchObservations: [],
       researchRecent14Total: 0,
+      uniqueResearchObservations: [],
     };
   }
 }
@@ -360,21 +410,83 @@ async function fetchRegionalObservationPage(page) {
   if (!state.selected) return;
   if (!state.regionalStats || state.regionalStats.status !== "available") return;
   const safePage = Math.max(1, page);
-  elements.regionalTiles.innerHTML = `<div class="chart-empty">Loading observations...</div>`;
-  try {
-    const researchPage = await fetchINaturalistRecentResearch(state.selected.latitude, state.selected.longitude, {
-      d1: isoDaysAgo(14),
-      page: String(safePage),
-      per_page: "8",
-    });
-    state.regionalStats.recentResearchObservations = researchPage.observations;
-    state.regionalStats.researchRecent14Total = researchPage.totalResults;
+  const all = state.regionalStats.uniqueResearchObservations ?? [];
+  const pageSize = 8;
+  const start = (safePage - 1) * pageSize;
+  state.regionalStats.recentResearchObservations = all.slice(start, start + pageSize);
+  state.regionalPage = safePage;
+  renderRegionalStats();
+}
+
+function buildObservationTilesMarkup(observations) {
+  if (!observations.length) return `<div class="chart-empty">No recent research-grade observations to show.</div>`;
+  return observations
+    .map(
+      (obs) => `
+      <div class="observation-tile">
+        <a class="observation-main-link" href="${obs.url}" target="_blank" rel="noopener noreferrer">
+        <div class="observation-thumb">${obs.photo ? `<img src="${obs.photo}" alt="${obs.species}">` : `<span>No photo</span>`}</div>
+        <div class="observation-meta">
+          <strong>${obs.species}</strong>
+          ${obs.scientificName ? `<em>${obs.scientificName}</em>` : ""}
+          <span>${obs.observedOn || "Date unknown"}</span>
+        </div>
+        </a>
+        <div class="observation-links">
+          <a href="${obs.url}" target="_blank" rel="noopener noreferrer">View on iNaturalist</a>
+          ${obs.wikipediaUrl ? `<a href="${obs.wikipediaUrl}" target="_blank" rel="noopener noreferrer">Wikipedia</a>` : ""}
+        </div>
+      </div>
+    `,
+    )
+    .join("");
+}
+
+function ensureRegionalPageMarkup(stats, page, pageSize = 8) {
+  if (state.regionalTilePages.has(page)) return state.regionalTilePages.get(page);
+  const all = stats.uniqueResearchObservations ?? [];
+  const start = (page - 1) * pageSize;
+  const pageItems = all.slice(start, start + pageSize);
+  const markup = buildObservationTilesMarkup(pageItems);
+  state.regionalTilePages.set(page, markup);
+  return markup;
+}
+
+function renderRegionalTilesWithSlide(stats, targetPage) {
+  const total = (stats.uniqueResearchObservations ?? []).length;
+  const pageSize = 8;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(Math.max(1, targetPage), pageCount);
+  const nextMarkup = ensureRegionalPageMarkup(stats, safePage, pageSize);
+  ensureRegionalPageMarkup(stats, Math.max(1, safePage - 1), pageSize);
+  ensureRegionalPageMarkup(stats, Math.min(pageCount, safePage + 1), pageSize);
+
+  const direction = safePage >= (state.regionalPage || 1) ? "forward" : "backward";
+  const currentTrack = elements.regionalTiles.querySelector(".regional-tiles-track.current");
+
+  const incoming = document.createElement("div");
+  incoming.className = `regional-tiles-track incoming ${direction === "forward" ? "from-right" : "from-left"}`;
+  incoming.innerHTML = nextMarkup;
+  elements.regionalTiles.appendChild(incoming);
+
+  if (!currentTrack) {
+    incoming.classList.remove("incoming", "from-right", "from-left");
+    incoming.classList.add("current");
     state.regionalPage = safePage;
-    renderRegionalStats();
-  } catch (error) {
-    console.error(error);
-    elements.regionalTiles.innerHTML = `<div class="chart-empty">Could not load this page.</div>`;
+    return;
   }
+
+  currentTrack.classList.add(direction === "forward" ? "to-left" : "to-right");
+  requestAnimationFrame(() => {
+    incoming.classList.add("enter");
+    incoming.classList.remove("from-right", "from-left");
+  });
+  window.setTimeout(() => {
+    currentTrack.remove();
+    incoming.classList.remove("incoming", "enter");
+    incoming.classList.add("current");
+  }, 340);
+  state.regionalPage = safePage;
 }
 
 function normalizeWeather(payload) {
@@ -738,6 +850,7 @@ function renderRegionalStats() {
     elements.regionalMetrics.innerHTML = "";
     elements.regionalTiles.innerHTML = "";
     elements.regionalPagination.innerHTML = "";
+    state.regionalTilePages.clear();
     elements.regionalCopy.textContent = "";
     return;
   }
@@ -745,38 +858,13 @@ function renderRegionalStats() {
   elements.regionalConfidence.hidden = true;
   elements.regionalMetrics.innerHTML = `
     <div class="metric-pill"><span>Research-grade (14d)</span><strong>${stats.researchRecent14Total ?? stats.researchRecent14Observations}</strong></div>
-    <div class="metric-pill"><span>Showing</span><strong>${(stats.recentResearchObservations ?? []).length} of ${stats.researchRecent14Total ?? 0}</strong></div>
+    <div class="metric-pill"><span>Unique species</span><strong>${(stats.uniqueResearchObservations ?? []).length}</strong></div>
   `;
-  const tiles = stats.recentResearchObservations ?? [];
-  if (!tiles.length) {
-    elements.regionalTiles.innerHTML = `<div class="chart-empty">No recent research-grade observations to show.</div>`;
-  } else {
-    elements.regionalTiles.innerHTML = tiles
-      .map(
-        (obs) => `
-      <div class="observation-tile">
-        <a class="observation-main-link" href="${obs.url}" target="_blank" rel="noopener noreferrer">
-        <div class="observation-thumb">${obs.photo ? `<img src="${obs.photo}" alt="${obs.species}">` : `<span>No photo</span>`}</div>
-        <div class="observation-meta">
-          <strong>${obs.species}</strong>
-          ${obs.scientificName ? `<em>${obs.scientificName}</em>` : ""}
-          <span>${obs.observedOn || "Date unknown"}</span>
-        </div>
-        </a>
-        <div class="observation-links">
-          <a href="${obs.url}" target="_blank" rel="noopener noreferrer">View on iNaturalist</a>
-          ${obs.wikipediaUrl ? `<a href="${obs.wikipediaUrl}" target="_blank" rel="noopener noreferrer">Wikipedia</a>` : ""}
-        </div>
-      </div>
-    `,
-      )
-      .join("");
-  }
-  const total = stats.researchRecent14Total ?? 0;
+  const total = (stats.uniqueResearchObservations ?? []).length;
   const pageSize = 8;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.min(Math.max(1, state.regionalPage || 1), pageCount);
-  state.regionalPage = currentPage;
+  renderRegionalTilesWithSlide(stats, currentPage);
   elements.regionalPagination.innerHTML = `
     <button class="ghost-button" type="button" data-regional-page="${Math.max(1, currentPage - 1)}" ${currentPage <= 1 ? "disabled" : ""}>Previous</button>
     <span class="chart-unit">Page ${currentPage} / ${pageCount}</span>
@@ -874,6 +962,7 @@ async function analyzeLocation(location, shouldMoveMap = true) {
   elements.detailCopy.textContent = "Refreshing weather context for the selected location.";
   state.regionalStats = null;
   state.regionalPage = 1;
+  state.regionalTilePages.clear();
   renderRegionalStats();
 
   try {
