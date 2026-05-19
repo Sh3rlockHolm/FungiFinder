@@ -68,6 +68,19 @@ function mean(values) {
   return valid.length ? sum(valid) / valid.length : 0;
 }
 
+function weightedMean(values, weights) {
+  let numerator = 0;
+  let denominator = 0;
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index];
+    const weight = weights[index] ?? 0;
+    if (!Number.isFinite(value) || !Number.isFinite(weight) || weight <= 0) continue;
+    numerator += value * weight;
+    denominator += weight;
+  }
+  return denominator > 0 ? numerator / denominator : 0;
+}
+
 function parseCoordinateInput(value) {
   const match = value.trim().match(/^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/);
   if (!match) return null;
@@ -323,7 +336,10 @@ function normalizeWeather(payload) {
   const hourlyTime = payload.hourly?.time ?? [];
   const hourlyTemp = payload.hourly?.temperature_2m ?? [];
   const hourlyRh = payload.hourly?.relative_humidity_2m ?? [];
-  const hourlyTopSoil = payload.hourly?.soil_moisture_0_to_7cm ?? [];
+  const hourlyTopSoilDirect = payload.hourly?.soil_moisture_0_to_7cm ?? [];
+  const hourlyTopSoil0to1 = payload.hourly?.soil_moisture_0_to_1cm ?? [];
+  const hourlyTopSoil1to3 = payload.hourly?.soil_moisture_1_to_3cm ?? [];
+  const hourlyTopSoil3to9 = payload.hourly?.soil_moisture_3_to_9cm ?? [];
 
   for (let index = 0; index < hourlyTime.length; index += 1) {
     const stamp = hourlyTime[index];
@@ -333,7 +349,12 @@ function normalizeWeather(payload) {
     const bucket = hourlyByDate.get(date);
     const t = hourlyTemp[index];
     const rh = hourlyRh[index];
-    const topSoil = hourlyTopSoil[index];
+    const topSoil = Number.isFinite(hourlyTopSoilDirect[index])
+      ? hourlyTopSoilDirect[index]
+      : weightedMean(
+          [hourlyTopSoil0to1[index], hourlyTopSoil1to3[index], hourlyTopSoil3to9[index]],
+          [0.2, 0.3, 0.5],
+        );
     if (Number.isFinite(rh)) bucket.rhValues.push(rh);
     if (Number.isFinite(topSoil)) bucket.topSoilValues.push(topSoil);
     if (Number.isFinite(t) && Number.isFinite(rh) && rh > 0) {
@@ -369,16 +390,21 @@ function windowSlice(days, index, lookbackDays) {
 function scoreDay(days, index, todayIndex) {
   const target = days[index];
   const threeDayWindow = windowSlice(days, index, 3);
-  const twoDayWindow = windowSlice(days, index, 1);
   const previousThreeDayWindow = days.slice(Math.max(0, index - 5), Math.max(0, index - 2));
-  const rain1dAgo = days[index - 1]?.precipitation ?? 0;
-  const rain2dAgo = days[index - 2]?.precipitation ?? 0;
-  const rain3dAgo = days[index - 3]?.precipitation ?? 0;
+  const day1Ago = days[index - 1] ?? null;
+  const day2Ago = days[index - 2] ?? null;
+  const day3Ago = days[index - 3] ?? null;
+  const rain1dAgo = day1Ago?.precipitation ?? 0;
+  const rain2dAgo = day2Ago?.precipitation ?? 0;
+  const rain3dAgo = day3Ago?.precipitation ?? 0;
   const rain72h = sum(threeDayWindow.map((day) => day.precipitation));
-  const humidity72hAvg = mean(threeDayWindow.map((day) => day.rhMean));
-  const temp48hMin = Math.min(...twoDayWindow.map((day) => day.minTemp));
-  const temp48hAvg = mean(twoDayWindow.map((day) => day.meanTemp));
-  const temp48hMax = Math.max(...twoDayWindow.map((day) => day.maxTemp));
+  const weightedTemp72h = weightedMean([day1Ago?.meanTemp, day2Ago?.meanTemp, day3Ago?.meanTemp], [0.2, 0.5, 0.3]);
+  const weightedRain72h = weightedMean([rain1dAgo, rain2dAgo, rain3dAgo], [0.2, 0.5, 0.3]);
+  const humidity72hAvg = weightedMean([day1Ago?.rhMean, day2Ago?.rhMean, day3Ago?.rhMean], [0.2, 0.5, 0.3]);
+  const soilMoisture72hAvg = weightedMean(
+    [day1Ago?.soilMoistureTop, day2Ago?.soilMoistureTop, day3Ago?.soilMoistureTop],
+    [0.2, 0.5, 0.3],
+  );
   const avgTemp = mean(threeDayWindow.map((day) => day.meanTemp));
   const nightlyMin = Math.min(...threeDayWindow.map((day) => day.minTemp));
   const diurnalRange = mean(threeDayWindow.map((day) => day.maxTemp - day.minTemp));
@@ -429,10 +455,10 @@ function scoreDay(days, index, todayIndex) {
     rain1dAgo,
     rain2dAgo,
     rain3dAgo,
+    weightedTemp72h,
+    weightedRain72h,
     humidity72hAvg,
-    temp48hMin,
-    temp48hAvg,
-    temp48hMax,
+    soilMoisture72hAvg,
     probability: modelInference.probability,
     score: clamp(score, 0, 100),
     season,
@@ -645,10 +671,10 @@ function renderSelectedDay() {
   elements.detailVerdict.textContent = selectedDay.verdict;
   elements.detailCopy.textContent = `${selectedDay.reasons.join(" ")} Moisture timing uses recent days, with the strongest influence typically from rain about 2 days before. Ground moisture is a modeled topsoil estimate (0-7 cm), not an in-ground sensor read.`;
   elements.detailMetrics.innerHTML = `
-    <div class="metric-pill"><span>Temp (48h min/avg/max)</span><strong>${selectedDay.temp48hMin.toFixed(1)} / ${selectedDay.temp48hAvg.toFixed(1)} / ${selectedDay.temp48hMax.toFixed(1)} C</strong></div>
-    <div class="metric-pill"><span>Rain prior 72h</span><strong>${selectedDay.rain72h.toFixed(1)} mm</strong></div>
-    <div class="metric-pill"><span>Humidity (72h avg)</span><strong>${Number.isFinite(selectedDay.humidity72hAvg) ? selectedDay.humidity72hAvg.toFixed(0) : "--"} %</strong></div>
-    <div class="metric-pill"><span>Ground moisture (0-7 cm)</span><strong>${Number.isFinite(selectedDay.soilMoistureTop) ? selectedDay.soilMoistureTop.toFixed(2) : "--"} m3/m3</strong></div>
+    <div class="metric-pill"><span>Temp (72h weighted avg)</span><strong>${Number.isFinite(selectedDay.weightedTemp72h) ? selectedDay.weightedTemp72h.toFixed(1) : "--"} C</strong></div>
+    <div class="metric-pill"><span>Rain (72h weighted)</span><strong>${Number.isFinite(selectedDay.weightedRain72h) ? selectedDay.weightedRain72h.toFixed(1) : "--"} mm</strong></div>
+    <div class="metric-pill"><span>Humidity (72h weighted avg)</span><strong>${Number.isFinite(selectedDay.humidity72hAvg) ? selectedDay.humidity72hAvg.toFixed(0) : "--"} %</strong></div>
+    <div class="metric-pill"><span>Ground moisture (72h weighted)</span><strong>${Number.isFinite(selectedDay.soilMoisture72hAvg) ? selectedDay.soilMoisture72hAvg.toFixed(2) : "--"} m<sup>3</sup>/m<sup>3</sup></strong></div>
   `;
   renderRegionalStats();
   renderDaySelector();
