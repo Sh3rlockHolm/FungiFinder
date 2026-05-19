@@ -462,9 +462,11 @@ function renderCombinedChart() {
     return;
   }
 
-  const width = Math.max(620, Math.round(elements.combinedChart.clientWidth || 920));
-  const height = 292;
-  const margin = { top: 18, right: 88, bottom: 42, left: 74 };
+  const containerWidth = Math.round(elements.combinedChart.clientWidth || 920);
+  const mobile = containerWidth <= 620;
+  const width = containerWidth;
+  const height = mobile ? 320 : 292;
+  const margin = mobile ? { top: 18, right: 52, bottom: 54, left: 48 } : { top: 18, right: 88, bottom: 42, left: 74 };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
   const visibleSlots = 15;
@@ -502,6 +504,9 @@ function renderCombinedChart() {
   const markerX = focusIndex >= 0 ? xAt(focusIndex) + targetTranslate : centerX;
   const pastShadeTrackX = todayIndex >= 0 ? xAt(todayIndex) - slotWidth / 2 : null;
 
+  const xLabelStep = mobile ? 3 : 1;
+  const yTickCount = mobile ? 4 : 5;
+
   elements.combinedChart.innerHTML = `
     <svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Combined weather timeline">
       <defs>
@@ -509,8 +514,8 @@ function renderCombinedChart() {
           <rect x="${margin.left}" y="${margin.top}" width="${plotWidth}" height="${plotHeight}"></rect>
         </clipPath>
       </defs>
-      ${Array.from({ length: 5 }, (_, index) => {
-        const ratio = index / 4;
+      ${Array.from({ length: yTickCount }, (_, index) => {
+        const ratio = yTickCount === 1 ? 0 : index / (yTickCount - 1);
         const y = margin.top + ratio * plotHeight;
         const tempValue = Math.round(tempMax - ratio * (tempMax - tempMin));
         const rainValue = Math.round(rainTop - ratio * rainTop);
@@ -544,7 +549,10 @@ function renderCombinedChart() {
         ${minPoints.map((point, index) => `<circle class="combined-point min" cx="${point.x}" cy="${point.y}" r="${index === focusIndex ? 5 : 4}"></circle>`).join("")}
         ${avgPoints.map((point, index) => `<circle class="combined-point avg" cx="${point.x}" cy="${point.y}" r="${index === focusIndex ? 5 : 4}"></circle>`).join("")}
         ${maxPoints.map((point, index) => `<circle class="combined-point max" cx="${point.x}" cy="${point.y}" r="${index === focusIndex ? 5 : 4}"></circle>`).join("")}
-        ${state.allDays.map((day, index) => `<text class="x-label" x="${xAt(index)}" y="${height - 12}" text-anchor="middle">${formatTimelineLabel(day.date)}</text>`).join("")}
+        ${state.allDays.map((day, index) => {
+          if (index % xLabelStep !== 0 && index !== focusIndex && index !== state.allDays.length - 1) return "";
+          return `<text class="x-label" x="${xAt(index)}" y="${height - 12}" text-anchor="middle">${formatTimelineLabel(day.date)}</text>`;
+        }).join("")}
         </g>
       </g>
       <line class="target-marker" x1="${markerX}" y1="${margin.top}" x2="${markerX}" y2="${margin.top + plotHeight}"></line>
