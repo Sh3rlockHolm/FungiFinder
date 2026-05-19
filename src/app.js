@@ -788,7 +788,7 @@ elements.locationSuggestions.addEventListener("click", (event) => {
   if (!option) return;
   chooseSuggestion(Number.parseInt(option.dataset.suggestionIndex, 10));
 });
-elements.sampleButton.addEventListener("click", () => analyzeLocation({ label: "Black Forest", latitude: 48.1351, longitude: 8.2319 }));
+elements.sampleButton.addEventListener("click", () => analyzeLocation({ label: "Darien, CT", latitude: 41.0772, longitude: 73.4687 }));
 elements.useLocationButton.addEventListener("click", () => {
   if (!navigator.geolocation) {
     setStatus("No GPS");
