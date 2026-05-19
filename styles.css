@@ -685,6 +685,12 @@ dd {
   text-transform: uppercase;
 }
 
+.breakdown-pill span {
+  font-size: 0.73rem;
+  line-height: 1.35;
+  text-transform: none;
+}
+
 .metric-pill strong,
 .breakdown-pill strong {
   font-size: 1rem;

@@ -81,21 +81,21 @@
         <section class="method-panel" aria-label="Scoring method">
           <h2>General conditions model</h2>
           <p>
-            A broad conditions signal based on recent weather, seasonality, habitat context,
-            and nearby observation activity.
+            A current fruiting signal based on recent weather timing, habitat context,
+            and nearby recent observation activity.
           </p>
           <dl>
             <div>
               <dt>Now</dt>
-              <dd>General mushroom conditions only, not species-specific.</dd>
+              <dd>Current fruiting conditions only, not species-specific.</dd>
             </div>
             <div>
               <dt>Context</dt>
-              <dd>Forest type and nearby observation activity refine the baseline rating.</dd>
+              <dd>Recent nearby observations (7d/14d) lead; seasonality is a weak prior.</dd>
             </div>
             <div>
               <dt>Scope</dt>
-              <dd>General conditions only.</dd>
+              <dd>Designed for active fruiting windows, not generic "mushroom season."</dd>
             </div>
           </dl>
         </section>
@@ -172,7 +172,7 @@
         <div class="modal-header">
           <div>
             <p class="eyebrow">Model weighting</p>
-            <h3 id="weightingTitle">Condition score breakdown</h3>
+            <h3 id="weightingTitle">Ranked factor impact</h3>
           </div>
           <button class="icon-button modal-close" id="closeWeightingButton" type="button" aria-label="Close model weighting">
             X
