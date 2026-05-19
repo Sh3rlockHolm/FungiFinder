@@ -43,6 +43,10 @@ const elements = {
   regionalMetrics: document.querySelector("#regionalMetrics"),
   regionalPagination: document.querySelector("#regionalPagination"),
   regionalTiles: document.querySelector("#regionalTiles"),
+  imageModal: document.querySelector("#imageModal"),
+  closeImageModalButton: document.querySelector("#closeImageModalButton"),
+  imageModalPreview: document.querySelector("#imageModalPreview"),
+  imageModalTitle: document.querySelector("#imageModalTitle"),
   sampleButton: document.querySelector("#sampleButton"),
   seasonBadge: document.querySelector("#seasonBadge"),
   summaryLabel: document.querySelector("#summaryLabel"),
@@ -300,6 +304,13 @@ async function fetchINaturalistRecentResearch(latitude, longitude, extraParams =
       url: item.uri || `https://www.inaturalist.org/observations/${item.id}`,
       wikipediaUrl: taxon.wikipedia_url || "",
       scientificName: taxon.name || "",
+      taxonKey: taxon.id ? `taxon:${taxon.id}` : `label:${(taxon.name || speciesRaw || "unknown").toLowerCase()}`,
+      identifications_count: item.identifications_count ?? 0,
+      identifications_most_agree: item.identifications_most_agree ?? false,
+      identifications_some_agree: item.identifications_some_agree ?? false,
+      identifications_most_disagree: item.identifications_most_disagree ?? false,
+      num_identification_agreements: item.num_identification_agreements ?? 0,
+      num_identification_disagreements: item.num_identification_disagreements ?? 0,
     };
   });
   return {
@@ -321,13 +332,7 @@ function observationConfidenceScore(item) {
 function dedupeByBestConfidence(observations) {
   const bestByKey = new Map();
   observations.forEach((item) => {
-    const taxonId = item.taxon?.id;
-    const labelKey =
-      item.taxon?.name?.toLowerCase() ||
-      item.species_guess?.toLowerCase() ||
-      item.taxon?.preferred_common_name?.toLowerCase() ||
-      "unknown";
-    const key = taxonId ? `taxon:${taxonId}` : `label:${labelKey}`;
+    const key = item.taxonKey || `label:${(item.scientificName || item.species || "unknown").toLowerCase()}`;
     const current = bestByKey.get(key);
     if (!current) {
       bestByKey.set(key, item);
@@ -425,7 +430,13 @@ function buildObservationTilesMarkup(observations) {
       (obs) => `
       <div class="observation-tile">
         <a class="observation-main-link" href="${obs.url}" target="_blank" rel="noopener noreferrer">
-        <div class="observation-thumb">${obs.photo ? `<img src="${obs.photo}" alt="${obs.species}">` : `<span>No photo</span>`}</div>
+        <div class="observation-thumb">
+          ${
+            obs.photo
+              ? `<img src="${obs.photo}" alt="${obs.species}" data-popup-image="${obs.photo}" data-popup-title="${obs.species.replace(/"/g, "&quot;")}">`
+              : `<span>No photo</span>`
+          }
+        </div>
         <div class="observation-meta">
           <strong>${obs.species}</strong>
           ${obs.scientificName ? `<em>${obs.scientificName}</em>` : ""}
@@ -487,6 +498,25 @@ function renderRegionalTilesWithSlide(stats, targetPage) {
     incoming.classList.add("current");
   }, 340);
   state.regionalPage = safePage;
+}
+
+function openImageModal(src, title) {
+  if (!src || !elements.imageModal || !elements.imageModalPreview) return;
+  elements.imageModalPreview.src = src;
+  elements.imageModalPreview.alt = title || "Observation preview";
+  if (elements.imageModalTitle) elements.imageModalTitle.textContent = title || "Observation";
+  elements.imageModal.hidden = false;
+  requestAnimationFrame(() => {
+    elements.imageModal.classList.add("is-open");
+  });
+}
+
+function closeImageModal() {
+  if (!elements.imageModal) return;
+  elements.imageModal.classList.remove("is-open");
+  window.setTimeout(() => {
+    if (!elements.imageModal.classList.contains("is-open")) elements.imageModal.hidden = true;
+  }, 220);
 }
 
 function normalizeWeather(payload) {
@@ -1081,6 +1111,16 @@ elements.regionalPagination.addEventListener("click", (event) => {
   if (!Number.isFinite(page)) return;
   fetchRegionalObservationPage(page);
 });
+elements.regionalTiles.addEventListener("click", (event) => {
+  const image = event.target.closest("[data-popup-image]");
+  if (!image) return;
+  event.preventDefault();
+  openImageModal(image.dataset.popupImage, image.dataset.popupTitle);
+});
+elements.closeImageModalButton.addEventListener("click", closeImageModal);
+elements.imageModal.addEventListener("click", (event) => {
+  if (event.target === elements.imageModal) closeImageModal();
+});
 elements.combinedChart.addEventListener("keydown", (event) => {
   if (event.key === "ArrowLeft") {
     event.preventDefault();
@@ -1115,6 +1155,9 @@ elements.combinedChart.addEventListener("click", (event) => {
   if (inSelectableRange) setFocusDate(clicked.date);
 });
 window.addEventListener("resize", renderCombinedChart);
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && elements.imageModal && !elements.imageModal.hidden) closeImageModal();
+});
 
 initMap();
 analyzeLocation(state.selected);

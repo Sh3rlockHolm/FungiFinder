@@ -10,7 +10,7 @@
       integrity="sha256-p4NxAoJBhIINfQO8jQ6fQX9mSfjT07U7F4D5W5N2r8E="
       crossorigin=""
     />
-    <link rel="stylesheet" href="./styles.css?v=20260520-2" />
+    <link rel="stylesheet" href="./styles.css?v=20260520-3" />
   </head>
   <body>
     <main class="app-shell">
@@ -147,11 +147,23 @@
       </section>
     </main>
 
+    <div class="modal-backdrop" id="imageModal" hidden>
+      <div class="modal-window image-modal-window" role="dialog" aria-modal="true" aria-labelledby="imageModalTitle">
+        <div class="modal-header">
+          <h3 id="imageModalTitle">Observation</h3>
+          <button class="icon-button modal-close" id="closeImageModalButton" type="button" aria-label="Close image preview">X</button>
+        </div>
+        <div class="image-modal-body">
+          <img id="imageModalPreview" alt="Observation preview">
+        </div>
+      </div>
+    </div>
+
     <script
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
       integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
       crossorigin=""
     ></script>
-    <script type="module" src="./src/app.js?v=20260520-2"></script>
+    <script type="module" src="./src/app.js?v=20260520-3"></script>
   </body>
 </html>
