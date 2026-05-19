@@ -692,6 +692,17 @@ dd {
   gap: 10px;
 }
 
+.regional-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.regional-pagination .ghost-button {
+  min-width: 90px;
+}
+
 .observation-tile {
   display: grid;
   gap: 8px;

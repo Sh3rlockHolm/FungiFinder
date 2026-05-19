@@ -10,6 +10,7 @@ const state = {
   regionalStats: null,
   scoredDays: [],
   selected: { latitude: 41.0772, longitude: -73.4687, label: "Darien, CT" },
+  regionalPage: 1,
   selectedSuggestion: null,
   suggestionRequestId: 0,
   suggestionTimer: null,
@@ -39,6 +40,7 @@ const elements = {
   regionalConfidence: document.querySelector("#regionalConfidence"),
   regionalCopy: document.querySelector("#regionalCopy"),
   regionalMetrics: document.querySelector("#regionalMetrics"),
+  regionalPagination: document.querySelector("#regionalPagination"),
   regionalTiles: document.querySelector("#regionalTiles"),
   sampleButton: document.querySelector("#sampleButton"),
   seasonBadge: document.querySelector("#seasonBadge"),
@@ -275,8 +277,7 @@ async function fetchINaturalistRecentResearch(latitude, longitude, extraParams =
   if (!response.ok) throw new Error(`iNaturalist request failed with ${response.status}`);
   const payload = await response.json();
   const results = payload.results ?? [];
-  const deduped = new Map();
-  results.forEach((item) => {
+  const observations = results.map((item) => {
     const taxon = item.taxon ?? {};
     const speciesRaw =
       taxon.preferred_common_name ||
@@ -290,9 +291,7 @@ async function fetchINaturalistRecentResearch(latitude, longitude, extraParams =
       .join(" ");
     const observedOn = item.observed_on || item.time_observed_at?.slice(0, 10) || "";
     const photo = item.photos?.[0]?.url?.replace("square", "medium") ?? "";
-    const key = taxon.id ? `taxon:${taxon.id}` : `label:${species.toLowerCase()}`;
-    if (deduped.has(key)) return;
-    deduped.set(key, {
+    return {
       id: item.id,
       observedOn,
       photo,
@@ -300,52 +299,43 @@ async function fetchINaturalistRecentResearch(latitude, longitude, extraParams =
       url: item.uri || `https://www.inaturalist.org/observations/${item.id}`,
       wikipediaUrl: taxon.wikipedia_url || "",
       scientificName: taxon.name || "",
-    });
+    };
   });
-  return [...deduped.values()];
-}
-
-function confidenceForRegionalStats(stats) {
-  if (!stats || stats.totalObservations < 20) return "Sparse data";
-  if (stats.totalObservations >= 200) return "High observer coverage";
-  if (stats.totalObservations >= 80) return "Moderate observer coverage";
-  return "Low observer coverage";
+  return {
+    observations,
+    totalResults: payload.total_results ?? observations.length,
+  };
 }
 
 function summarizeRegionalStats(stats) {
-  if (!stats || stats.status === "unavailable") {
-    return "Nearby report data could not be loaded. Fruiting score uses weather and moisture only.";
-  }
-  if (stats.totalObservations < 20) {
-    return "Few nearby reports exist here, so this section is low confidence and should not be treated as absence of fungi.";
-  }
-  return "Research-grade nearby reports are shown for context only. They reflect observer presence and access, not true fungal abundance.";
+  if (!stats || stats.status === "unavailable") return "";
+  return "";
 }
 
 async function fetchRegionalObservationStats(latitude, longitude, dateString) {
   const month = String(new Date(`${dateString}T12:00:00`).getUTCMonth() + 1);
   try {
-    const [totalObservations, seasonalObservations, recent7Observations, recent14Observations, researchRecent14Observations, recentResearchObservations] =
+    const [totalObservations, seasonalObservations, recent7Observations, recent14Observations, researchRecent14Observations, researchPage] =
       await Promise.all([
         fetchINaturalistCount(latitude, longitude),
         fetchINaturalistCount(latitude, longitude, { month }),
         fetchINaturalistCount(latitude, longitude, { d1: isoDaysAgo(7) }),
         fetchINaturalistCount(latitude, longitude, { d1: isoDaysAgo(14) }),
         fetchINaturalistCount(latitude, longitude, { d1: isoDaysAgo(14), quality_grade: "research" }),
-        fetchINaturalistRecentResearch(latitude, longitude, { d1: isoDaysAgo(30) }),
+        fetchINaturalistRecentResearch(latitude, longitude, { d1: isoDaysAgo(14), page: "1", per_page: "8" }),
       ]);
     const stats = {
       confidence: "",
       recent7Observations,
       recent14Observations,
       researchRecent14Observations,
+      researchRecent14Total: researchPage.totalResults,
       seasonalObservations,
       source: "iNaturalist",
       status: "available",
       totalObservations,
-      recentResearchObservations,
+      recentResearchObservations: researchPage.observations,
     };
-    stats.confidence = confidenceForRegionalStats(stats);
     stats.summary = summarizeRegionalStats(stats);
     return stats;
   } catch (error) {
@@ -361,7 +351,29 @@ async function fetchRegionalObservationStats(latitude, longitude, dateString) {
       summary: summarizeRegionalStats(null),
       totalObservations: 0,
       recentResearchObservations: [],
+      researchRecent14Total: 0,
     };
+  }
+}
+
+async function fetchRegionalObservationPage(page) {
+  if (!state.selected) return;
+  if (!state.regionalStats || state.regionalStats.status !== "available") return;
+  const safePage = Math.max(1, page);
+  elements.regionalTiles.innerHTML = `<div class="chart-empty">Loading observations...</div>`;
+  try {
+    const researchPage = await fetchINaturalistRecentResearch(state.selected.latitude, state.selected.longitude, {
+      d1: isoDaysAgo(14),
+      page: String(safePage),
+      per_page: "8",
+    });
+    state.regionalStats.recentResearchObservations = researchPage.observations;
+    state.regionalStats.researchRecent14Total = researchPage.totalResults;
+    state.regionalPage = safePage;
+    renderRegionalStats();
+  } catch (error) {
+    console.error(error);
+    elements.regionalTiles.innerHTML = `<div class="chart-empty">Could not load this page.</div>`;
   }
 }
 
@@ -721,16 +733,19 @@ function renderSelectedDay() {
 function renderRegionalStats() {
   const stats = state.regionalStats;
   if (!stats) {
-    elements.regionalConfidence.textContent = "Loading";
+    elements.regionalConfidence.textContent = "";
+    elements.regionalConfidence.hidden = true;
     elements.regionalMetrics.innerHTML = "";
     elements.regionalTiles.innerHTML = "";
-    elements.regionalCopy.textContent = "Loading recent nearby iNaturalist fungi observations (within 50 km).";
+    elements.regionalPagination.innerHTML = "";
+    elements.regionalCopy.textContent = "";
     return;
   }
-  elements.regionalConfidence.textContent = stats.confidence;
+  elements.regionalConfidence.textContent = "";
+  elements.regionalConfidence.hidden = true;
   elements.regionalMetrics.innerHTML = `
-    <div class="metric-pill"><span>Research-grade (14d)</span><strong>${stats.researchRecent14Observations}</strong></div>
-    <div class="metric-pill"><span>Unique species shown</span><strong>${(stats.recentResearchObservations ?? []).length}</strong></div>
+    <div class="metric-pill"><span>Research-grade (14d)</span><strong>${stats.researchRecent14Total ?? stats.researchRecent14Observations}</strong></div>
+    <div class="metric-pill"><span>Showing</span><strong>${(stats.recentResearchObservations ?? []).length} of ${stats.researchRecent14Total ?? 0}</strong></div>
   `;
   const tiles = stats.recentResearchObservations ?? [];
   if (!tiles.length) {
@@ -757,7 +772,17 @@ function renderRegionalStats() {
       )
       .join("");
   }
-  elements.regionalCopy.textContent = `${stats.summary} Tiles are deduplicated by species/taxon. Data source: ${stats.source} fungi observations (verifiable), 50 km radius.`;
+  const total = stats.researchRecent14Total ?? 0;
+  const pageSize = 8;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(Math.max(1, state.regionalPage || 1), pageCount);
+  state.regionalPage = currentPage;
+  elements.regionalPagination.innerHTML = `
+    <button class="ghost-button" type="button" data-regional-page="${Math.max(1, currentPage - 1)}" ${currentPage <= 1 ? "disabled" : ""}>Previous</button>
+    <span class="chart-unit">Page ${currentPage} / ${pageCount}</span>
+    <button class="ghost-button" type="button" data-regional-page="${Math.min(pageCount, currentPage + 1)}" ${currentPage >= pageCount ? "disabled" : ""}>Next</button>
+  `;
+  elements.regionalCopy.textContent = "";
 }
 
 function moveFocus(step) {
@@ -848,6 +873,7 @@ async function analyzeLocation(location, shouldMoveMap = true) {
   elements.combinedChart.innerHTML = `<div class="loading">Building the weather timeline...</div>`;
   elements.detailCopy.textContent = "Refreshing weather context for the selected location.";
   state.regionalStats = null;
+  state.regionalPage = 1;
   renderRegionalStats();
 
   try {
@@ -958,6 +984,13 @@ elements.daySelector.addEventListener("click", (event) => {
   const button = event.target.closest("[data-day]");
   if (!button) return;
   setFocusDate(button.dataset.day);
+});
+elements.regionalPagination.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-regional-page]");
+  if (!button) return;
+  const page = Number.parseInt(button.dataset.regionalPage ?? "", 10);
+  if (!Number.isFinite(page)) return;
+  fetchRegionalObservationPage(page);
 });
 elements.combinedChart.addEventListener("keydown", (event) => {
   if (event.key === "ArrowLeft") {
