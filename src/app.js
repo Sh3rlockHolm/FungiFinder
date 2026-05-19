@@ -7,7 +7,7 @@ const state = {
   marker: null,
   regionalStats: null,
   scoredDays: [],
-  selected: { latitude: 41.0772, longitude: 73.4687, label: "Darien, CT" },
+  selected: { latitude: 41.0772, longitude: -73.4687, label: "Darien, CT" },
   selectedSuggestion: null,
   suggestionRequestId: 0,
   suggestionTimer: null,
@@ -823,7 +823,7 @@ elements.locationSuggestions.addEventListener("click", (event) => {
   if (!option) return;
   chooseSuggestion(Number.parseInt(option.dataset.suggestionIndex, 10));
 });
-elements.sampleButton.addEventListener("click", () => analyzeLocation({ label: "Darien, CT", latitude: 41.0772, longitude: 73.4687 }));
+elements.sampleButton.addEventListener("click", () => analyzeLocation({ label: "Darien, CT", latitude: 41.0772, longitude: -73.4687 }));
 elements.useLocationButton.addEventListener("click", () => {
   if (!navigator.geolocation) {
     setStatus("No GPS");
