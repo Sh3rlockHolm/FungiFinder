@@ -1,3 +1,5 @@
+import { MODEL_METADATA, buildModelFeatures, inferFruitingSignal, scoreToVerdict } from "./model.js";
+
 const state = {
   allDays: [],
   animationFromIndex: null,
@@ -56,17 +58,6 @@ const dayFormatter = new Intl.DateTimeFormat(undefined, {
 });
 const weekdayFormatter = new Intl.DateTimeFormat(undefined, { weekday: "short" });
 const monthDayFormatter = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
-const FACTOR_WEIGHTS = {
-  regionalRecent: 0.3,
-  moistureTiming: 0.24,
-  temperature: 0.16,
-  habitat: 0.1,
-  nights: 0.08,
-  stability: 0.06,
-  season: 0.04,
-  regionalDepth: 0.02,
-};
-
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -124,22 +115,6 @@ function rangeScore(value, bestLow, bestHigh, hardLow, hardHigh) {
   if (value < hardLow || value > hardHigh) return 0;
   if (value < bestLow) return ((value - hardLow) / (bestLow - hardLow)) * 100;
   return ((hardHigh - value) / (hardHigh - bestHigh)) * 100;
-}
-
-function verdictForScore(score) {
-  if (score >= 82) return "Excellent conditions";
-  if (score >= 68) return "Good chance";
-  if (score >= 52) return "Mixed but worth a look";
-  if (score >= 35) return "Low signal";
-  return "Poor conditions";
-}
-
-function confidenceForScore({ rainScore, recentRainScore, habitatScore, regionalStats, targetIndex, todayIndex }) {
-  if (targetIndex - todayIndex > 7) return "Forecast uncertain";
-  if (!regionalStats || regionalStats.confidence === "Sparse data") return "Data limited";
-  if (habitatScore < 80) return "Habitat limited";
-  if (rainScore < 35 || recentRainScore < 35) return "Weather limited";
-  return "High confidence";
 }
 
 function setStatus(message) {
@@ -366,84 +341,60 @@ function scoreDay(days, index, todayIndex) {
   const threeDayWindow = windowSlice(days, index, 3);
   const previousThreeDayWindow = days.slice(Math.max(0, index - 5), Math.max(0, index - 2));
   const rain72h = sum(threeDayWindow.map((day) => day.precipitation));
-  const currentRain = target.precipitation;
-  const priorRain72h = Math.max(0, rain72h - currentRain);
   const avgTemp = mean(threeDayWindow.map((day) => day.meanTemp));
-  const priorAvgTemp = mean(previousThreeDayWindow.map((day) => day.meanTemp));
   const nightlyMin = Math.min(...threeDayWindow.map((day) => day.minTemp));
   const diurnalRange = mean(threeDayWindow.map((day) => day.maxTemp - day.minTemp));
 
-  const priorRainScore = rangeScore(priorRain72h, 4, 20, 0, 40);
-  const currentRainPenalty = rangeScore(currentRain, 0, 4, 0, 18);
-  const warmTrendScore = rangeScore(avgTemp - priorAvgTemp, 1, 5, -5, 8);
-  const moistureTrendScore = Math.round(priorRainScore * 0.55 + currentRainPenalty * 0.2 + warmTrendScore * 0.25);
-  const tempScore = rangeScore(avgTemp, 8, 18, 1, 27);
-  const nightScore = nightlyMin < -1 ? 0 : rangeScore(nightlyMin, 4, 13, -1, 20);
-  const stabilityScore = rangeScore(diurnalRange, 6, 12, 2, 18);
   const season = getSeasonForDate(target.date, state.selected.latitude);
   const seasonScore = seasonScoreForDate(target.date, state.selected.latitude);
   const habitatScore = forestScore();
-  const seasonalDepthScore = state.regionalStats
-    ? rangeScore(state.regionalStats.seasonalObservations, 20, 120, 0, 240)
-    : 55;
-  const recentRegionalScore = state.regionalStats
-    ? rangeScore(state.regionalStats.recent7Observations * 2 + state.regionalStats.recent14Observations, 8, 42, 0, 70)
-    : 58;
-
-  const score = Math.round(
-    recentRegionalScore * FACTOR_WEIGHTS.regionalRecent +
-      moistureTrendScore * FACTOR_WEIGHTS.moistureTiming +
-      tempScore * FACTOR_WEIGHTS.temperature +
-      habitatScore * FACTOR_WEIGHTS.habitat +
-      nightScore * FACTOR_WEIGHTS.nights +
-      stabilityScore * FACTOR_WEIGHTS.stability +
-      seasonScore * FACTOR_WEIGHTS.season +
-      seasonalDepthScore * FACTOR_WEIGHTS.regionalDepth,
-  );
-
-  const factorImportance = [
-    { key: "regionalRecent", label: "Recent nearby observations (7/14d)", score: Math.round(recentRegionalScore), weight: FACTOR_WEIGHTS.regionalRecent },
-    { key: "moistureTiming", label: "72h moisture timing + warming", score: Math.round(moistureTrendScore), weight: FACTOR_WEIGHTS.moistureTiming },
-    { key: "temperature", label: "Temperature window", score: Math.round(tempScore), weight: FACTOR_WEIGHTS.temperature },
-    { key: "habitat", label: "Habitat baseline", score: Math.round(habitatScore), weight: FACTOR_WEIGHTS.habitat },
-    { key: "nights", label: "Night lows / frost risk", score: Math.round(nightScore), weight: FACTOR_WEIGHTS.nights },
-    { key: "stability", label: "Temperature stability", score: Math.round(stabilityScore), weight: FACTOR_WEIGHTS.stability },
-    { key: "season", label: "Seasonal prior (weak)", score: Math.round(seasonScore), weight: FACTOR_WEIGHTS.season },
-    { key: "regionalDepth", label: "Historical regional depth", score: Math.round(seasonalDepthScore), weight: FACTOR_WEIGHTS.regionalDepth },
-  ]
-    .map((factor) => ({ ...factor, impact: factor.score * factor.weight }))
-    .sort((left, right) => right.impact - left.impact);
+  const previousWindow = {
+    previous3AvgTemp: mean(previousThreeDayWindow.map((day) => day.meanTemp)),
+    recent3AvgTemp: avgTemp,
+    recent3DiurnalRange: diurnalRange,
+    recent3NightMin: nightlyMin,
+    recent3Rain: rain72h,
+  };
+  const featureBundle = buildModelFeatures({
+    day: target,
+    previousWindow,
+    regionalStats: state.regionalStats,
+    habitatScore,
+    seasonScore,
+    latitude: state.selected.latitude,
+  });
+  const modelInference = inferFruitingSignal({
+    featureVector: featureBundle,
+    daysAhead: Math.max(0, index - todayIndex),
+    regionalStats: state.regionalStats,
+  });
+  const score = Math.round(modelInference.probability * 100);
 
   return {
     ...target,
     avgTemp,
-    breakdown: {
-      regionalRecent: Math.round(recentRegionalScore),
-      habitat: habitatScore,
-      moisture72h: Math.round(moistureTrendScore),
-      nights: Math.round(nightScore),
-      season: Math.round(seasonScore),
-      stability: Math.round(stabilityScore),
-      temperature: Math.round(tempScore),
+    confidence: modelInference.confidence,
+    diagnostics: {
+      ...modelInference.diagnostics,
+      ...featureBundle.diagnostics,
+      modelVersion: MODEL_METADATA.modelVersion,
     },
-    factorImportance,
-    confidence: confidenceForScore({
-      habitatScore,
-      rainScore: priorRainScore,
-      recentRainScore: moistureTrendScore,
-      regionalStats: state.regionalStats,
-      targetIndex: index,
-      todayIndex,
-    }),
+    factorImportance: modelInference.topFactors,
     diurnalRange,
     nightlyMin,
     rain72h,
-    priorRain72h,
-    currentRain,
+    probability: modelInference.probability,
     score: clamp(score, 0, 100),
     season,
-    verdict: verdictForScore(score),
-    reasons: buildReasons({ rain72h, priorRain72h, currentRain, avgTemp, nightlyMin, warmTrendScore }),
+    verdict: scoreToVerdict(modelInference.probability),
+    reasons: buildReasons({
+      rain72h,
+      priorRain72h: featureBundle.diagnostics.priorRain24To72,
+      currentRain: featureBundle.diagnostics.currentRain,
+      avgTemp,
+      nightlyMin,
+      warmTrendScore: clamp(featureBundle.warmingAfterRain * 100, 0, 100),
+    }),
   };
 }
 
@@ -632,7 +583,7 @@ function renderSelectedDay() {
   elements.todayVerdict.textContent = selectedDay.verdict;
   elements.confidenceBadge.textContent = selectedDay.confidence;
   elements.analysisTitle.textContent = `${label} evidence`;
-  elements.analysisCopy.textContent = "Tap any day to compare conditions while keeping the selected day centered.";
+  elements.analysisCopy.textContent = `Tap any day to compare calibrated fruiting probability. Model ${MODEL_METADATA.modelVersion}.`;
   elements.seasonBadge.textContent = `${selectedDay.season} (weak prior)`;
   elements.detailDateLabel.textContent = label;
   elements.detailScore.textContent = `${selectedDay.score}/100`;
@@ -648,7 +599,7 @@ function renderSelectedDay() {
     .map((factor, index) => `
       <div class="breakdown-pill">
         <span>#${index + 1} ${factor.label}</span>
-        <strong>${Math.round(factor.impact)} impact</strong>
+        <strong>${factor.direction} (${factor.contributionPercent}%)</strong>
       </div>
     `)
     .join("");
@@ -792,7 +743,7 @@ async function analyzeLocation(location, shouldMoveMap = true) {
     state.focusDate = state.scoredDays[0]?.date ?? null;
     renderCombinedChart();
     renderSelectedDay();
-    elements.contextCopy.textContent = `${state.forestType.replace("-", " ")} forest gently modifies the broad conditions signal.`;
+    elements.contextCopy.textContent = `${state.forestType.replace("-", " ")} forest is a secondary modifier; recent local activity and 72h weather timing lead.`;
     setStatus("Updated");
   } catch (error) {
     console.error(error);

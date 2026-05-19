@@ -25,9 +25,58 @@ Open-Meteo is a strong first source because it is easy to prototype with and can
 serve both web and future mobile clients. Later versions should consider a
 dedicated weather provider if higher-resolution rainfall history becomes critical.
 
-## Scoring Model v0.4
+## Fruiting Signal Model v2
 
-Each target day is scored from a rolling window ending on that day:
+Each target day now produces a calibrated probability for:
+
+`P(activity spike in nearby observations in the next 1-3 days)`
+
+Displayed app score is `0-100 = calibrated probability (%)`.
+
+### Inference Contract
+
+The scoring pipeline emits:
+
+```json
+{
+  "probability": 0.64,
+  "confidence": "High confidence",
+  "topFactors": [],
+  "diagnostics": {}
+}
+```
+
+Model metadata is versioned in `src/model.js` and `src/model-metadata.json`:
+
+- model version
+- train window
+- calibration method
+- feature schema hash
+
+### Feature Priorities
+
+Highest influence:
+
+- recent nearby observations (7d and 14d)
+- 72h moisture timing (with 24-72h rain preference)
+- warming trend after moisture
+
+Lower influence:
+
+- seasonality (weak prior only)
+- historical depth
+
+The model intentionally does **not** treat "mushroom season" as a hard blocker.
+
+### Implementation Notes
+
+- Interpretable regularized logistic model with Platt calibration.
+- Regional pooling with location/climate covariates.
+- Confidence badge reflects data sparsity and forecast horizon uncertainty.
+
+## Legacy Heuristic (Retired)
+
+Previous weighted-heuristic model (v0.4) used fixed rainfall/temperature blend:
 
 - 26% previous 7-day rainfall
 - 13% recent 72-hour rainfall
@@ -50,22 +99,38 @@ Initial assumptions:
 - Nearby observations are used only as a broad regional activity signal; the app
   does not surface likely species or "potential finds" yet
 
-This is intentionally general. It estimates broad fruiting conditions, not
-species-specific abundance or safety.
+This is retained for historical context only.
 
-## Empirical Regional Signal
+## Empirical Regional Signal (v2)
 
 For the selected region, the app queries nearby iNaturalist fungi observations
 within a 50 km radius:
 
+- recent 7-day observation count
 - recent 14-day observation count
-- recent 45-day observation count
-- all historical observations in the current calendar month
-- recent research-grade observation count
+- recent 14-day research-grade count
+- current-month regional activity baseline
 
 This produces a conservative regional activity score and data-confidence label.
-If observation data is sparse or unavailable, the app falls back to the general
-weather/season baseline rather than pretending to know more than it does.
+If observation data is sparse or unavailable, confidence drops and weather timing
+features are weighted more heavily.
+
+## Backtesting
+
+Run rolling time-split backtests:
+
+```powershell
+npm run backtest
+```
+
+The script reports:
+
+- AUC-ROC
+- PR-AUC
+- Brier score
+- ECE (expected calibration error)
+
+Current script location: `scripts/backtest.mjs`.
 
 ## Product Discussion Needed
 
