@@ -1,47 +1,47 @@
 export const MODEL_METADATA = {
-  modelVersion: "v6.0.0",
+  modelVersion: "v6.1.0",
   modelType: "rule_driven_rain_event_scoring",
   calibrationMethod: "bounded_component_blend",
   trainedWindow: {
     from: "2024-01-01",
     to: "2026-05-20",
   },
-  featureSchemaHash: "ff-v6_0-rain-event-lag-tail-20260520",
+  featureSchemaHash: "ff-v6_1-rain-event-lag-tail-tuned-20260520",
   targetDefinition: "P(detectable_fruiting_presence_local_window_2_3d)",
   radiusKm: 50,
 };
 
 export const SCORING_CONFIG = {
   rainThresholdsMm: {
-    light: 2,
-    medium: 8,
-    heavy: 16,
-    severe: 28,
-    significant: 8,
+    light: 1.5,
+    medium: 6,
+    heavy: 12,
+    severe: 22,
+    significant: 6,
   },
   lagDefaults: {
-    peakDayMin: 1,
-    peakDayMax: 3.6,
-    widthDays: 1.25,
-    severePeakShift: 0.85,
+    peakDayMin: 1.1,
+    peakDayMax: 3.2,
+    widthDays: 1.8,
+    severePeakShift: 0.55,
   },
   tailDefaults: {
-    baseHalfLifeDays: 1.8,
-    severeHalfLifeBonusDays: 2.2,
-    heavyHalfLifeBonusDays: 1.1,
-    maxTailDays: 8,
+    baseHalfLifeDays: 2.8,
+    severeHalfLifeBonusDays: 3.1,
+    heavyHalfLifeBonusDays: 1.8,
+    maxTailDays: 10,
   },
   dryingMultipliers: {
     tempMidC: 22,
     tempHighC: 28,
     vpdMid: 1.05,
     vpdHigh: 1.6,
-    tailReductionAtMaxDrying: 0.62,
+    tailReductionAtMaxDrying: 0.48,
   },
   saturationSuppression: {
-    startMm: 14,
-    fullMm: 34,
-    maxPenalty: 0.26,
+    startMm: 18,
+    fullMm: 38,
+    maxPenalty: 0.14,
   },
   temperatureWindow: {
     low: 0,
@@ -55,11 +55,11 @@ export const SCORING_CONFIG = {
     maxPenalty: 0.34,
   },
   componentWeights: {
-    rainEvent: 0.38,
-    temperature: 0.32,
-    drying: 0.12,
-    cold: 0.11,
-    seasonal: 0.07,
+    rainEvent: 0.5,
+    temperature: 0.3,
+    drying: 0.08,
+    cold: 0.08,
+    seasonal: 0.04,
   },
   scoreBounds: {
     min: 0.03,
@@ -70,9 +70,9 @@ export const SCORING_CONFIG = {
 export const CLIMATE_PRESETS = {
   humid: {
     lagPeakShiftDays: -0.2,
-    tailHalfLifeMultiplier: 1.12,
+    tailHalfLifeMultiplier: 1.18,
     dryingPenaltyMultiplier: 0.88,
-    rainBoostMultiplier: 1.06,
+    rainBoostMultiplier: 1.1,
     temperaturePenaltyMultiplier: 0.95,
   },
   temperate: {
@@ -84,9 +84,9 @@ export const CLIMATE_PRESETS = {
   },
   dry_continental: {
     lagPeakShiftDays: 0.25,
-    tailHalfLifeMultiplier: 0.82,
-    dryingPenaltyMultiplier: 1.2,
-    rainBoostMultiplier: 0.94,
+    tailHalfLifeMultiplier: 0.88,
+    dryingPenaltyMultiplier: 1.14,
+    rainBoostMultiplier: 0.96,
     temperaturePenaltyMultiplier: 1.06,
   },
 };
@@ -211,11 +211,15 @@ function buildRainEventSignal({ day, previousWindow, preset }) {
       SCORING_CONFIG.saturationSuppression.fullMm,
     ) * SCORING_CONFIG.saturationSuppression.maxPenalty;
 
-  const rainEventComponent = clamp(
+  let rainEventComponent = clamp(
     (0.58 * laggedBoost + 0.42 * dryingAdjustedTail) * (preset.rainBoostMultiplier ?? 1) - rainDaySuppression,
     0,
     1,
   );
+  // Explicit post-rain trigger bonus for classic flush windows after meaningful rain.
+  if (daysSincePeakRain >= 1 && daysSincePeakRain <= 3 && peakRainAmount >= thresholds.heavy) {
+    rainEventComponent = clamp(rainEventComponent + 0.08, 0, 1);
+  }
 
   return {
     rainEventClass,

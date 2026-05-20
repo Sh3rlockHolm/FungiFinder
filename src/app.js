@@ -1062,7 +1062,6 @@ function renderSelectedDay() {
   elements.detailScore.textContent = `${selectedDay.score}/100`;
   elements.detailVerdict.textContent = selectedDay.verdict;
   elements.detailCopy.textContent = selectedDay.reasons.join(" ");
-  const breakdown = selectedDay.diagnostics?.componentBreakdown ?? {};
   elements.detailMetrics.innerHTML = `
     <p class="metric-method-note">Window: recent 72h for temperature and humidity; rain is 3-day total.</p>
     <div class="metric-pill"><span>Temp min</span><strong>${Number.isFinite(selectedDay.weightedTemp72hMin) ? selectedDay.weightedTemp72hMin.toFixed(1) : "--"}&deg;C</strong></div>
@@ -1070,13 +1069,6 @@ function renderSelectedDay() {
     <div class="metric-pill"><span>Temp max</span><strong>${Number.isFinite(selectedDay.weightedTemp72hMax) ? selectedDay.weightedTemp72hMax.toFixed(1) : "--"}&deg;C</strong></div>
     <div class="metric-pill"><span>Rain</span><strong>${Number.isFinite(selectedDay.weightedRain72h) ? selectedDay.weightedRain72h.toFixed(1) : "--"} mm</strong></div>
     <div class="metric-pill"><span>Humidity</span><strong>${Number.isFinite(selectedDay.humidity72hAvg) ? selectedDay.humidity72hAvg.toFixed(0) : "--"} %</strong></div>
-    <p class="metric-method-note">Score breakdown</p>
-    <div class="metric-pill"><span>Rain lag boost</span><strong>${Number.isFinite(selectedDay.diagnostics?.laggedBoost) ? `${(selectedDay.diagnostics.laggedBoost * 100).toFixed(0)}%` : "--"}</strong></div>
-    <div class="metric-pill"><span>Moisture tail boost</span><strong>${Number.isFinite(selectedDay.diagnostics?.dryingAdjustedTail) ? `${(selectedDay.diagnostics.dryingAdjustedTail * 100).toFixed(0)}%` : "--"}</strong></div>
-    <div class="metric-pill"><span>Temp suitability</span><strong>${Number.isFinite(selectedDay.diagnostics?.temperatureComponent) ? `${(selectedDay.diagnostics.temperatureComponent * 100).toFixed(0)}%` : "--"}</strong></div>
-    <div class="metric-pill"><span>Drying penalty</span><strong>${Number.isFinite(breakdown.dryingPenalty) ? `${(breakdown.dryingPenalty * 100).toFixed(0)}%` : "--"}</strong></div>
-    <div class="metric-pill"><span>Cold penalty</span><strong>${Number.isFinite(breakdown.coldPenalty) ? `${(breakdown.coldPenalty * 100).toFixed(0)}%` : "--"}</strong></div>
-    <div class="metric-pill"><span>Final score</span><strong>${Number.isFinite(breakdown.finalScore) ? `${Math.round(breakdown.finalScore * 100)}/100` : "--"}</strong></div>
   `;
   renderRegionalStats();
   renderDaySelector();
