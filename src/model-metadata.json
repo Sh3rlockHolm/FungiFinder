@@ -1,12 +1,12 @@
 {
-  "modelVersion": "v5.0.0",
-  "modelType": "weather_logistic_no_moisture",
-  "calibrationMethod": "platt",
+  "modelVersion": "v6.0.0",
+  "modelType": "rule_driven_rain_event_scoring",
+  "calibrationMethod": "bounded_component_blend",
   "trainedWindow": {
     "from": "2024-01-01",
     "to": "2026-05-20"
   },
-  "featureSchemaHash": "ff-v5_0-no-moisture-20260520",
+  "featureSchemaHash": "ff-v6_0-rain-event-lag-tail-20260520",
   "targetDefinition": "P(detectable_fruiting_presence_local_window_2_3d)",
   "radiusKm": 50
 }

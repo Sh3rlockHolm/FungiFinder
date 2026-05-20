@@ -240,19 +240,19 @@ function seasonScoreForDate(dateString, latitude) {
   return 24;
 }
 
-function buildReasons({ rain3dTotal, dryingForce, currentRain, avgTemp, nightlyMin }) {
+function buildReasons({ rainEventClass, laggedBoost, tailBoost, dryingPenalty, avgTemp, nightlyMin }) {
   const reasons = [];
-  if (rain3dTotal >= 10) reasons.push("Recent rainfall supports fruiting momentum.");
-  else if (rain3dTotal >= 3) reasons.push("Recent rainfall is moderate but still supportive.");
-  else reasons.push("Recent rainfall has been limited.");
+  if (laggedBoost >= 0.55) reasons.push("Recent rain timing is in a strong post-rain fruiting window.");
+  else if (tailBoost >= 0.4) reasons.push("Moisture tail from recent rain is still supportive.");
+  else if (rainEventClass === "none") reasons.push("No significant recent rain event is supporting fruiting.");
+  else reasons.push("Rain support is present but not near peak timing.");
 
   if (avgTemp >= 8 && avgTemp <= 18) reasons.push("Average temperature is in a good range.");
   else if (avgTemp < 5) reasons.push("Temperatures are likely too cold.");
   else if (avgTemp >= 30) reasons.push("Very hot conditions usually suppress fruiting.");
   else reasons.push("Warmer-than-ideal conditions may shorten the fruiting window.");
 
-  if (dryingForce >= 0.7) reasons.push("Drying air and warmth are accelerating moisture loss.");
-  else if (currentRain >= 12) reasons.push("Heavy same-day rain may reduce short-term detectability, but does not erase prior growth.");
+  if (dryingPenalty >= 0.1) reasons.push("Drying air and warmth are reducing moisture persistence.");
 
   if (nightlyMin < -1) reasons.push("Recent frost is a strong negative signal.");
   else if (nightlyMin < 4) reasons.push("Cold nights reduce confidence.");
@@ -800,9 +800,10 @@ function scoreDay(days, index, todayIndex) {
     season,
     verdict: scoreToVerdict(modelInference.probability),
     reasons: buildReasons({
-      rain3dTotal: rain3dTotal,
-      dryingForce: featureBundle.dryingForce,
-      currentRain: featureBundle.diagnostics.currentRain,
+      rainEventClass: featureBundle.diagnostics.rainEventClass,
+      laggedBoost: featureBundle.diagnostics.laggedBoost,
+      tailBoost: featureBundle.diagnostics.tailBoost,
+      dryingPenalty: featureBundle.dryingPenalty,
       avgTemp,
       nightlyMin,
     }),
@@ -1061,13 +1062,21 @@ function renderSelectedDay() {
   elements.detailScore.textContent = `${selectedDay.score}/100`;
   elements.detailVerdict.textContent = selectedDay.verdict;
   elements.detailCopy.textContent = selectedDay.reasons.join(" ");
+  const breakdown = selectedDay.diagnostics?.componentBreakdown ?? {};
   elements.detailMetrics.innerHTML = `
     <p class="metric-method-note">Window: recent 72h for temperature and humidity; rain is 3-day total.</p>
-    <div class="metric-pill"><span>Temp min</span><strong>${Number.isFinite(selectedDay.weightedTemp72hMin) ? selectedDay.weightedTemp72hMin.toFixed(1) : "--"}°C</strong></div>
-    <div class="metric-pill"><span>Temp avg</span><strong>${Number.isFinite(selectedDay.weightedTemp72hAvg) ? selectedDay.weightedTemp72hAvg.toFixed(1) : "--"}°C</strong></div>
-    <div class="metric-pill"><span>Temp max</span><strong>${Number.isFinite(selectedDay.weightedTemp72hMax) ? selectedDay.weightedTemp72hMax.toFixed(1) : "--"}°C</strong></div>
+    <div class="metric-pill"><span>Temp min</span><strong>${Number.isFinite(selectedDay.weightedTemp72hMin) ? selectedDay.weightedTemp72hMin.toFixed(1) : "--"}&deg;C</strong></div>
+    <div class="metric-pill"><span>Temp avg</span><strong>${Number.isFinite(selectedDay.weightedTemp72hAvg) ? selectedDay.weightedTemp72hAvg.toFixed(1) : "--"}&deg;C</strong></div>
+    <div class="metric-pill"><span>Temp max</span><strong>${Number.isFinite(selectedDay.weightedTemp72hMax) ? selectedDay.weightedTemp72hMax.toFixed(1) : "--"}&deg;C</strong></div>
     <div class="metric-pill"><span>Rain</span><strong>${Number.isFinite(selectedDay.weightedRain72h) ? selectedDay.weightedRain72h.toFixed(1) : "--"} mm</strong></div>
     <div class="metric-pill"><span>Humidity</span><strong>${Number.isFinite(selectedDay.humidity72hAvg) ? selectedDay.humidity72hAvg.toFixed(0) : "--"} %</strong></div>
+    <p class="metric-method-note">Score breakdown</p>
+    <div class="metric-pill"><span>Rain lag boost</span><strong>${Number.isFinite(selectedDay.diagnostics?.laggedBoost) ? `${(selectedDay.diagnostics.laggedBoost * 100).toFixed(0)}%` : "--"}</strong></div>
+    <div class="metric-pill"><span>Moisture tail boost</span><strong>${Number.isFinite(selectedDay.diagnostics?.dryingAdjustedTail) ? `${(selectedDay.diagnostics.dryingAdjustedTail * 100).toFixed(0)}%` : "--"}</strong></div>
+    <div class="metric-pill"><span>Temp suitability</span><strong>${Number.isFinite(selectedDay.diagnostics?.temperatureComponent) ? `${(selectedDay.diagnostics.temperatureComponent * 100).toFixed(0)}%` : "--"}</strong></div>
+    <div class="metric-pill"><span>Drying penalty</span><strong>${Number.isFinite(breakdown.dryingPenalty) ? `${(breakdown.dryingPenalty * 100).toFixed(0)}%` : "--"}</strong></div>
+    <div class="metric-pill"><span>Cold penalty</span><strong>${Number.isFinite(breakdown.coldPenalty) ? `${(breakdown.coldPenalty * 100).toFixed(0)}%` : "--"}</strong></div>
+    <div class="metric-pill"><span>Final score</span><strong>${Number.isFinite(breakdown.finalScore) ? `${Math.round(breakdown.finalScore * 100)}/100` : "--"}</strong></div>
   `;
   renderRegionalStats();
   renderDaySelector();
