@@ -1,33 +1,31 @@
 export const MODEL_METADATA = {
-  modelVersion: "v4.0.0",
-  modelType: "physics_shaped_logistic",
+  modelVersion: "v5.0.0",
+  modelType: "weather_logistic_no_moisture",
   calibrationMethod: "platt",
   trainedWindow: {
     from: "2024-01-01",
     to: "2026-05-20",
   },
-  featureSchemaHash: "ff-v4_0-moisture-memory-thermal-readiness-20260520",
+  featureSchemaHash: "ff-v5_0-no-moisture-20260520",
   targetDefinition: "P(detectable_fruiting_presence_local_window_2_3d)",
   radiusKm: 50,
 };
 
 const COEFFICIENTS = {
-  intercept: -1.02,
-  moistureSupply: 1.38,
-  moistureStorage: 1.04,
-  dryingForce: -1.12,
-  thermalReadiness: 0.86,
-  coldShock: -0.74,
-  saturationStress: -0.22,
-  seasonWeak: 0.16,
+  intercept: -0.78,
+  rainPulse: 0.92,
+  dryingForce: -1.16,
+  thermalReadiness: 0.92,
+  coldShock: -0.78,
+  saturationStress: -0.24,
+  seasonWeak: 0.2,
   climateProxy: 0.09,
 };
 
-const PLATT = { a: 1.11, b: -0.04 };
+const PLATT = { a: 1.08, b: -0.02 };
 
 const FACTOR_LABELS = {
-  moistureSupply: "Antecedent moisture supply",
-  moistureStorage: "Moisture storage (topsoil)",
+  rainPulse: "Recent rain pulse",
   dryingForce: "Drying force (VPD + warmth)",
   thermalReadiness: "Thermal readiness",
   coldShock: "Cold-shock / frost risk",
@@ -58,130 +56,19 @@ function centeredScale(value, low, bestLow, bestHigh, high) {
   return (high - value) / Math.max(high - bestHigh, 1e-9);
 }
 
-function computeApiRain(rainHistory, halfLifeDays = 5) {
-  const lambda = Math.log(2) / Math.max(1, halfLifeDays);
-  return rainHistory.reduce((total, rain, dayIndex) => {
-    if (!Number.isFinite(rain) || rain <= 0) return total;
-    const weight = Math.exp(-lambda * dayIndex);
-    return total + rain * weight;
-  }, 0);
-}
-
-function average(array) {
-  const valid = array.filter(Number.isFinite);
-  if (!valid.length) return 0;
-  return valid.reduce((sum, value) => sum + value, 0) / valid.length;
-}
-
-function quantile(values, q) {
-  const valid = values.filter(Number.isFinite).sort((a, b) => a - b);
-  if (!valid.length) return 0;
-  const position = clamp(q, 0, 1) * (valid.length - 1);
-  const low = Math.floor(position);
-  const high = Math.ceil(position);
-  if (low === high) return valid[low];
-  const weight = position - low;
-  return valid[low] * (1 - weight) + valid[high] * weight;
-}
-
-function logistic01(value, midpoint, sharpness) {
-  return 1 / (1 + Math.exp(-sharpness * (value - midpoint)));
-}
-
-function simulateMoistureStorage({ rainNewestFirst, tempNewestFirst, vpdNewestFirst, rhNewestFirst, initialStorage = 0.28, rainAnchors }) {
-  const steps = Math.min(rainNewestFirst.length, tempNewestFirst.length, vpdNewestFirst.length, 7);
-  const wilting = 0.08;
-  const fieldCapacity = 0.32;
-  const saturation = 0.45;
-  const canopy = 0.7;
-  let storage = clamp(initialStorage, wilting, saturation);
-  const p50 = Math.max(0.4, rainAnchors?.p50 ?? 0.8);
-  const p85 = Math.max(p50 + 0.6, rainAnchors?.p85 ?? 8);
-  const p98 = Math.max(p85 + 0.8, rainAnchors?.p98 ?? 22);
-  const midpoint = p85;
-  const span = Math.max(1, p98 - p50);
-  const sharpness = 6 / span;
-
-  for (let idx = steps - 1; idx >= 0; idx -= 1) {
-    const rain = Number.isFinite(rainNewestFirst[idx]) ? Math.max(0, rainNewestFirst[idx]) : 0;
-    const temp = Number.isFinite(tempNewestFirst[idx]) ? tempNewestFirst[idx] : 12;
-    const vpd = Number.isFinite(vpdNewestFirst[idx]) ? vpdNewestFirst[idx] : 0.8;
-    const rh = Number.isFinite(rhNewestFirst?.[idx]) ? clamp(rhNewestFirst[idx], 10, 100) : 75;
-    const drying =
-      0.58 * scale(Math.max(0, vpd - 0.8), 0, 1.8) +
-      0.42 * scale(Math.max(0, temp - 14), 0, 16);
-    const stormIntensity = logistic01(rain, midpoint, sharpness);
-    const interceptionFrac = clamp((0.15 + 0.35 * canopy) * (1 - 0.35 * stormIntensity), 0.12, 0.46);
-    const throughfall = Math.max(0, rain * (1 - interceptionFrac));
-    const infilEfficiency = clamp(0.55 + 0.3 * logistic01(rain, p50, sharpness * 0.8), 0.5, 0.86);
-    const climateInfilCap = clamp(0.018 + 0.055 * logistic01(rain, midpoint, sharpness), 0.018, 0.075);
-    const infiltration = Math.min(throughfall / 1000 * infilEfficiency, climateInfilCap, saturation - storage);
-
-    const drainage = Math.max(0, storage - fieldCapacity) * 0.38;
-    const evapLoss = clamp(
-      (0.0018 + 0.011 * drying) * (1 - rh / 100) * (1 - 0.18 * canopy),
-      0.0003,
-      0.011,
-    );
-    const dryLoss = drainage + evapLoss;
-
-    const baseNext = storage + infiltration - dryLoss;
-    let nextStorage = baseNext;
-    if (rain <= 1) nextStorage = Math.min(nextStorage, storage - dryLoss);
-    storage = clamp(nextStorage, wilting, saturation);
-  }
-  return storage;
-}
-
 export function buildModelFeatures({ day, previousWindow, seasonScore, latitude }) {
   const currentRain = Number.isFinite(day.precipitation) ? Math.max(0, day.precipitation) : 0;
-  const rainHistory21d = Array.isArray(previousWindow.rainHistory21d)
-    ? previousWindow.rainHistory21d.map((value) => (Number.isFinite(value) ? Math.max(0, value) : 0))
-    : [];
-  const rainHistoryForSupply = [...rainHistory21d];
-  if (rainHistoryForSupply.length) {
-    // Keep same-day rain influence moderate but non-zero so moisture response is immediate.
-    rainHistoryForSupply[0] = rainHistoryForSupply[0] * 0.65;
-  }
+  const rain1dAgo = Number.isFinite(previousWindow.rain1dAgo) ? Math.max(0, previousWindow.rain1dAgo) : 0;
+  const rain2dAgo = Number.isFinite(previousWindow.rain2dAgo) ? Math.max(0, previousWindow.rain2dAgo) : 0;
+  const rain3dAgo = Number.isFinite(previousWindow.rain3dAgo) ? Math.max(0, previousWindow.rain3dAgo) : 0;
+  const recent3Rain = Number.isFinite(previousWindow.recent3Rain) ? Math.max(0, previousWindow.recent3Rain) : currentRain;
 
-  const rainHistoryNoCurrent = rainHistory21d.slice(1);
-  const api7 = computeApiRain(rainHistoryForSupply.slice(0, 7), 3.2);
-  const api14 = computeApiRain(rainHistoryForSupply.slice(0, 14), 5.0);
-  const api21 = computeApiRain(rainHistoryForSupply.slice(0, 21), 7.0);
-  const antecedentRainTotal = rainHistoryNoCurrent.reduce((sum, value) => sum + value, 0);
-  const localRainAnchors = {
-    p50: quantile(rainHistoryNoCurrent, 0.5),
-    p85: quantile(rainHistoryNoCurrent, 0.85),
-    p98: quantile(rainHistoryNoCurrent, 0.98),
-  };
-
-  const moistureSupply = centeredScale(0.45 * api7 + 0.38 * api14 + 0.17 * api21, 0, 3.5, 17, 48);
-
-  const topSoilRecent = Number.isFinite(previousWindow.recent3TopSoilMoisture)
-    ? previousWindow.recent3TopSoilMoisture
-    : Number.isFinite(day.soilMoistureTop)
-      ? day.soilMoistureTop
-      : 0;
-  const topSoilHistory = Array.isArray(previousWindow.soilHistory7d) ? previousWindow.soilHistory7d : [];
-  const topSoilHistoryMean = average(topSoilHistory);
-  const rainHistory7d = rainHistory21d.slice(0, 7);
-  const tempHistory7d = Array.isArray(previousWindow.tempHistory7d) ? previousWindow.tempHistory7d : [];
-  const vpdHistory7d = Array.isArray(previousWindow.vpdHistory7d) ? previousWindow.vpdHistory7d : [];
-  const rhHistory7d = Array.isArray(previousWindow.rhHistory7d) ? previousWindow.rhHistory7d : [];
-  const soilStorageBase = clamp(0.7 * topSoilRecent + 0.3 * topSoilHistoryMean, 0.08, 0.45);
-  const prevModeledStorage = Number.isFinite(previousWindow.prevModeledStorage)
-    ? previousWindow.prevModeledStorage
-    : null;
-  const storageReservoir = simulateMoistureStorage({
-    rainNewestFirst: rainHistory7d,
-    tempNewestFirst: tempHistory7d,
-    vpdNewestFirst: vpdHistory7d,
-    rhNewestFirst: rhHistory7d,
-    initialStorage: prevModeledStorage ?? soilStorageBase,
-    rainAnchors: localRainAnchors,
-  });
-  const moistureStorageVolumetric = storageReservoir;
-  const moistureStorage = centeredScale(moistureStorageVolumetric, 0.08, 0.18, 0.36, 0.45);
+  const rainPulse = clamp(
+    0.65 * centeredScale(rain1dAgo + rain2dAgo, 0, 1.2, 14, 38) +
+      0.35 * centeredScale(recent3Rain, 0, 2, 19, 55),
+    0,
+    1,
+  );
 
   const vpd3 = Number.isFinite(previousWindow.recent3Vpd) ? previousWindow.recent3Vpd : Number.isFinite(day.vpdMean) ? day.vpdMean : 0;
   const meanTemp3 = Number.isFinite(previousWindow.recent3AvgTemp) ? previousWindow.recent3AvgTemp : day.meanTemp;
@@ -204,8 +91,7 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
   const climateProxy = 1 - clamp(Math.abs(latitude) / 75, 0, 1);
 
   return {
-    moistureSupply,
-    moistureStorage,
+    rainPulse,
     dryingForce,
     thermalReadiness,
     coldShock,
@@ -213,24 +99,17 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
     seasonWeak: clamp(seasonScore / 100, 0, 1),
     climateProxy: clamp(climateProxy, 0, 1),
     diagnostics: {
-      antecedentRainTotal,
-      api7,
-      api14,
-      api21,
       currentRain,
       degreeDaysBase5,
       dryingForce,
       meanTemp3,
-      moistureStorage,
-      moistureStorageVolumetric,
-      moistureSupply,
       nightlyMin3,
-      rainP50: localRainAnchors.p50,
-      rainP85: localRainAnchors.p85,
-      rainP98: localRainAnchors.p98,
+      rain1dAgo,
+      rain2dAgo,
+      rain3dAgo,
+      rainPulse,
+      recent3Rain,
       saturationStress,
-      storageReservoir,
-      topSoilRecent,
       vpd3,
     },
   };
@@ -260,17 +139,10 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
   const horizonPenalty = clamp(daysAhead / 9, 0, 0.16);
   let adjustedProbability = clamp(calibratedProbability * (1 - horizonPenalty), 0.01, 0.99);
 
-  const highMoistureMemory = (featureVector.moistureSupply ?? 0) >= 0.72;
-  const strongStorage = (featureVector.moistureStorage ?? 0) >= 0.58;
-  const heavySameDayRain = (featureVector.saturationStress ?? 0) >= 0.4;
-  if (highMoistureMemory && strongStorage && heavySameDayRain) {
-    adjustedProbability = Math.max(adjustedProbability, 0.5);
-  }
-
-  const veryDry = (featureVector.moistureSupply ?? 0) <= 0.22 && (featureVector.moistureStorage ?? 0) <= 0.24;
+  const highRainPulse = (featureVector.rainPulse ?? 0) >= 0.7;
   const strongDrying = (featureVector.dryingForce ?? 0) >= 0.75;
-  if (veryDry && strongDrying) {
-    adjustedProbability = Math.min(adjustedProbability, 0.52);
+  if (highRainPulse && strongDrying) {
+    adjustedProbability = Math.min(adjustedProbability, 0.62);
   }
 
   const sparseRegional = !regionalStats || (regionalStats.totalObservations ?? 0) < 20;

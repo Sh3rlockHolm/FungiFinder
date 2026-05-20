@@ -240,14 +240,11 @@ function seasonScoreForDate(dateString, latitude) {
   return 24;
 }
 
-function buildReasons({ moistureSupply, moistureStorage, dryingForce, currentRain, avgTemp, nightlyMin }) {
+function buildReasons({ rain3dTotal, dryingForce, currentRain, avgTemp, nightlyMin }) {
   const reasons = [];
-  if (moistureSupply >= 0.65) reasons.push("Antecedent rain memory supports current fruiting momentum.");
-  else if (moistureSupply >= 0.38) reasons.push("Recent rain memory is moderate but still supportive.");
-  else reasons.push("Antecedent moisture memory is limited right now.");
-
-  if (moistureStorage >= 0.55) reasons.push("Topsoil moisture storage remains supportive.");
-  else if (moistureStorage <= 0.25) reasons.push("Topsoil moisture storage is currently low.");
+  if (rain3dTotal >= 10) reasons.push("Recent rainfall supports fruiting momentum.");
+  else if (rain3dTotal >= 3) reasons.push("Recent rainfall is moderate but still supportive.");
+  else reasons.push("Recent rainfall has been limited.");
 
   if (avgTemp >= 8 && avgTemp <= 18) reasons.push("Average temperature is in a good range.");
   else if (avgTemp < 5) reasons.push("Temperatures are likely too cold.");
@@ -268,8 +265,7 @@ async function fetchWeather(latitude, longitude) {
     latitude: latitude.toFixed(5),
     longitude: longitude.toFixed(5),
     daily: "temperature_2m_mean,temperature_2m_max,temperature_2m_min,precipitation_sum",
-    hourly:
-      "temperature_2m,relative_humidity_2m,soil_moisture_0_to_7cm,soil_moisture_0_to_1cm,soil_moisture_1_to_3cm,soil_moisture_3_to_9cm",
+    hourly: "temperature_2m,relative_humidity_2m",
     forecast_days: "11",
     past_days: "7",
     timezone: "auto",
@@ -684,27 +680,16 @@ function normalizeWeather(payload) {
   const hourlyTime = payload.hourly?.time ?? [];
   const hourlyTemp = payload.hourly?.temperature_2m ?? [];
   const hourlyRh = payload.hourly?.relative_humidity_2m ?? [];
-  const hourlyTopSoilDirect = payload.hourly?.soil_moisture_0_to_7cm ?? [];
-  const hourlyTopSoil0to1 = payload.hourly?.soil_moisture_0_to_1cm ?? [];
-  const hourlyTopSoil1to3 = payload.hourly?.soil_moisture_1_to_3cm ?? [];
-  const hourlyTopSoil3to9 = payload.hourly?.soil_moisture_3_to_9cm ?? [];
 
   for (let index = 0; index < hourlyTime.length; index += 1) {
     const stamp = hourlyTime[index];
     if (!stamp) continue;
     const date = stamp.slice(0, 10);
-    if (!hourlyByDate.has(date)) hourlyByDate.set(date, { rhValues: [], vpdValues: [], topSoilValues: [] });
+    if (!hourlyByDate.has(date)) hourlyByDate.set(date, { rhValues: [], vpdValues: [] });
     const bucket = hourlyByDate.get(date);
     const t = hourlyTemp[index];
     const rh = hourlyRh[index];
-    const topSoil = Number.isFinite(hourlyTopSoilDirect[index])
-      ? hourlyTopSoilDirect[index]
-      : weightedMeanOrNull(
-          [hourlyTopSoil0to1[index], hourlyTopSoil1to3[index], hourlyTopSoil3to9[index]],
-          [0.2, 0.3, 0.5],
-        );
     if (Number.isFinite(rh)) bucket.rhValues.push(rh);
-    if (Number.isFinite(topSoil)) bucket.topSoilValues.push(topSoil);
     if (Number.isFinite(t) && Number.isFinite(rh) && rh > 0) {
       const svp = 0.6108 * Math.exp((17.27 * t) / (t + 237.3));
       const vpd = svp * (1 - rh / 100);
@@ -720,7 +705,6 @@ function normalizeWeather(payload) {
     minTemp: payload.daily.temperature_2m_min[index],
     precipitation: payload.daily.precipitation_sum[index],
     rhMean: mean(hourlyByDate.get(date)?.rhValues ?? []),
-    soilMoistureTop: mean(hourlyByDate.get(date)?.topSoilValues ?? []),
     vpdMean: mean(hourlyByDate.get(date)?.vpdValues ?? []),
   }));
 }
@@ -735,12 +719,11 @@ function windowSlice(days, index, lookbackDays) {
   return days.slice(Math.max(0, index - lookbackDays), index + 1);
 }
 
-function scoreDay(days, index, todayIndex, prevModeledStorage = null) {
+function scoreDay(days, index, todayIndex) {
   const target = days[index];
   const threeDayWindow = windowSlice(days, index, 2);
   const previousThreeDayWindow = days.slice(Math.max(0, index - 5), Math.max(0, index - 2));
   const rainHistory21d = Array.from({ length: 21 }, (_, lag) => Math.max(0, days[index - lag]?.precipitation ?? 0));
-  const soilHistory7d = Array.from({ length: 7 }, (_, lag) => days[index - lag]?.soilMoistureTop ?? null).filter(Number.isFinite);
   const tempHistory7d = Array.from({ length: 7 }, (_, lag) => days[index - lag]?.meanTemp ?? null).filter(Number.isFinite);
   const vpdHistory7d = Array.from({ length: 7 }, (_, lag) => days[index - lag]?.vpdMean ?? null).filter(Number.isFinite);
   const rhHistory7d = Array.from({ length: 7 }, (_, lag) => days[index - lag]?.rhMean ?? null).filter(Number.isFinite);
@@ -756,10 +739,6 @@ function scoreDay(days, index, todayIndex, prevModeledStorage = null) {
   const weightedTemp72hMax = weightedMeanOrNull([day1Ago?.maxTemp, day2Ago?.maxTemp, day3Ago?.maxTemp], [0.2, 0.5, 0.3]);
   const rain3dTotal = rainLast3d;
   const humidity72hAvg = weightedMeanOrNull([day1Ago?.rhMean, day2Ago?.rhMean, day3Ago?.rhMean], [0.2, 0.5, 0.3]);
-  const soilMoisture72hAvg = weightedMeanOrNull(
-    [day1Ago?.soilMoistureTop, day2Ago?.soilMoistureTop, day3Ago?.soilMoistureTop],
-    [0.2, 0.5, 0.3],
-  );
   const avgTemp = mean(threeDayWindow.map((day) => day.meanTemp));
   const nightlyMin = Math.min(...threeDayWindow.map((day) => day.minTemp));
   const diurnalRange = mean(threeDayWindow.map((day) => day.maxTemp - day.minTemp));
@@ -776,12 +755,9 @@ function scoreDay(days, index, todayIndex, prevModeledStorage = null) {
     rain2dAgo,
     rain3dAgo,
     rainHistory21d,
-    soilHistory7d,
     tempHistory7d,
     vpdHistory7d,
     rhHistory7d,
-    prevModeledStorage,
-    recent3TopSoilMoisture: mean(threeDayWindow.map((day) => day.soilMoistureTop)),
     recent3Vpd: mean(threeDayWindow.map((day) => day.vpdMean)),
   };
   const featureBundle = buildModelFeatures({
@@ -819,14 +795,12 @@ function scoreDay(days, index, todayIndex, prevModeledStorage = null) {
     weightedTemp72hMax,
     weightedRain72h: rain3dTotal,
     humidity72hAvg,
-    soilMoisture72hAvg: featureBundle.diagnostics.moistureStorageVolumetric,
     probability: modelInference.probability,
     score: clamp(score, 0, 100),
     season,
     verdict: scoreToVerdict(modelInference.probability),
     reasons: buildReasons({
-      moistureSupply: featureBundle.moistureSupply,
-      moistureStorage: featureBundle.moistureStorage,
+      rain3dTotal: rain3dTotal,
       dryingForce: featureBundle.dryingForce,
       currentRain: featureBundle.diagnostics.currentRain,
       avgTemp,
@@ -837,11 +811,9 @@ function scoreDay(days, index, todayIndex, prevModeledStorage = null) {
 
 function scoreAllDays(days, todayIndex) {
   const scored = [];
-  let prevModeledStorage = null;
   for (let index = 0; index < days.length; index += 1) {
-    const scoredDay = scoreDay(days, index, todayIndex, prevModeledStorage);
+    const scoredDay = scoreDay(days, index, todayIndex);
     scored.push(scoredDay);
-    prevModeledStorage = scoredDay.soilMoisture72hAvg;
   }
   return scored;
 }
@@ -1090,11 +1062,12 @@ function renderSelectedDay() {
   elements.detailVerdict.textContent = selectedDay.verdict;
   elements.detailCopy.textContent = selectedDay.reasons.join(" ");
   elements.detailMetrics.innerHTML = `
-    <p class="metric-method-note">Window: recent 72h for temp and humidity; rain is 3-day total. Ground moisture is modeled daily storage.</p>
-    <div class="metric-pill"><span>Temp (min/avg/max)</span><strong>${Number.isFinite(selectedDay.weightedTemp72hMin) ? selectedDay.weightedTemp72hMin.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.weightedTemp72hAvg) ? selectedDay.weightedTemp72hAvg.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.weightedTemp72hMax) ? selectedDay.weightedTemp72hMax.toFixed(1) : "--"} C</strong></div>
+    <p class="metric-method-note">Window: recent 72h for temperature and humidity; rain is 3-day total.</p>
+    <div class="metric-pill"><span>Temp min</span><strong>${Number.isFinite(selectedDay.weightedTemp72hMin) ? selectedDay.weightedTemp72hMin.toFixed(1) : "--"}°C</strong></div>
+    <div class="metric-pill"><span>Temp avg</span><strong>${Number.isFinite(selectedDay.weightedTemp72hAvg) ? selectedDay.weightedTemp72hAvg.toFixed(1) : "--"}°C</strong></div>
+    <div class="metric-pill"><span>Temp max</span><strong>${Number.isFinite(selectedDay.weightedTemp72hMax) ? selectedDay.weightedTemp72hMax.toFixed(1) : "--"}°C</strong></div>
     <div class="metric-pill"><span>Rain</span><strong>${Number.isFinite(selectedDay.weightedRain72h) ? selectedDay.weightedRain72h.toFixed(1) : "--"} mm</strong></div>
     <div class="metric-pill"><span>Humidity</span><strong>${Number.isFinite(selectedDay.humidity72hAvg) ? selectedDay.humidity72hAvg.toFixed(0) : "--"} %</strong></div>
-    <div class="metric-pill"><span>Ground moisture</span><strong>${Number.isFinite(selectedDay.soilMoisture72hAvg) ? `${selectedDay.soilMoisture72hAvg.toFixed(3)} m<sup>3</sup>/m<sup>3</sup>` : "--"}</strong></div>
   `;
   renderRegionalStats();
   renderDaySelector();

@@ -1,12 +1,12 @@
 {
-  "modelVersion": "v5.0.0",
-  "modelType": "weather_logistic_no_moisture",
+  "modelVersion": "v4.0.0",
+  "modelType": "physics_shaped_logistic",
   "calibrationMethod": "platt",
   "trainedWindow": {
     "from": "2024-01-01",
     "to": "2026-05-20"
   },
-  "featureSchemaHash": "ff-v5_0-no-moisture-20260520",
+  "featureSchemaHash": "ff-v4_0-moisture-memory-thermal-readiness-20260520",
   "targetDefinition": "P(detectable_fruiting_presence_local_window_2_3d)",
   "radiusKm": 50
 }
