@@ -950,6 +950,13 @@ dd {
   background: rgba(251, 252, 247, 0.9);
 }
 
+.metric-method-note {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
 .metric-pill span,
 .breakdown-pill span {
   color: var(--muted);

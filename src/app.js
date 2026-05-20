@@ -1076,10 +1076,11 @@ function renderSelectedDay() {
   elements.detailVerdict.textContent = selectedDay.verdict;
   elements.detailCopy.textContent = selectedDay.reasons.join(" ");
   elements.detailMetrics.innerHTML = `
-    <div class="metric-pill"><span>Temp (72h weighted min/avg/max)</span><strong>${Number.isFinite(selectedDay.weightedTemp72hMin) ? selectedDay.weightedTemp72hMin.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.weightedTemp72hAvg) ? selectedDay.weightedTemp72hAvg.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.weightedTemp72hMax) ? selectedDay.weightedTemp72hMax.toFixed(1) : "--"} C</strong></div>
-    <div class="metric-pill"><span>Rain (72h weighted)</span><strong>${Number.isFinite(selectedDay.weightedRain72h) ? selectedDay.weightedRain72h.toFixed(1) : "--"} mm</strong></div>
-    <div class="metric-pill"><span>Humidity (72h weighted avg)</span><strong>${Number.isFinite(selectedDay.humidity72hAvg) ? selectedDay.humidity72hAvg.toFixed(0) : "--"} %</strong></div>
-    <div class="metric-pill"><span>Ground moisture (modeled storage)</span><strong>${Number.isFinite(selectedDay.soilMoisture72hAvg) ? `${Math.round(selectedDay.soilMoisture72hAvg * 100)} %` : "--"}</strong></div>
+    <p class="metric-method-note">Window: recent 72h weighting for temp, rain, humidity. Ground moisture uses modeled storage.</p>
+    <div class="metric-pill"><span>Temp (min/avg/max)</span><strong>${Number.isFinite(selectedDay.weightedTemp72hMin) ? selectedDay.weightedTemp72hMin.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.weightedTemp72hAvg) ? selectedDay.weightedTemp72hAvg.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.weightedTemp72hMax) ? selectedDay.weightedTemp72hMax.toFixed(1) : "--"} C</strong></div>
+    <div class="metric-pill"><span>Rain</span><strong>${Number.isFinite(selectedDay.weightedRain72h) ? selectedDay.weightedRain72h.toFixed(1) : "--"} mm</strong></div>
+    <div class="metric-pill"><span>Humidity</span><strong>${Number.isFinite(selectedDay.humidity72hAvg) ? selectedDay.humidity72hAvg.toFixed(0) : "--"} %</strong></div>
+    <div class="metric-pill"><span>Ground moisture</span><strong>${Number.isFinite(selectedDay.soilMoisture72hAvg) ? `${Math.round(selectedDay.soilMoisture72hAvg * 100)} %` : "--"}</strong></div>
   `;
   renderRegionalStats();
   renderDaySelector();

@@ -342,6 +342,8 @@ async function main() {
   const sortedRows = [...allRows].sort((a, b) => `${a.location}-${a.date}`.localeCompare(`${b.location}-${b.date}`));
   const dayToDayDeltas = [];
   const postRainDecayDeltas = [];
+  const dryDayStorageIncreaseViolations = [];
+  const maxStorageByLocation = new Map();
   for (let index = 1; index < sortedRows.length; index += 1) {
     const previous = sortedRows[index - 1];
     const current = sortedRows[index];
@@ -351,7 +353,19 @@ async function main() {
     const stormYesterday = (previous.rainToday ?? 0) >= 12;
     const dryToday = (current.rainToday ?? 0) <= 1;
     if (stormYesterday && dryToday) postRainDecayDeltas.push(previous.probability - current.probability);
+    if (dryToday && (current.moistureStorage ?? 0) - (previous.moistureStorage ?? 0) > 0.01) {
+      dryDayStorageIncreaseViolations.push((current.moistureStorage ?? 0) - (previous.moistureStorage ?? 0));
+    }
+    const localMax = Math.max(maxStorageByLocation.get(current.location) ?? 0, current.moistureStorage ?? 0);
+    maxStorageByLocation.set(current.location, localMax);
   }
+  if (sortedRows.length) {
+    const first = sortedRows[0];
+    maxStorageByLocation.set(first.location, Math.max(maxStorageByLocation.get(first.location) ?? 0, first.moistureStorage ?? 0));
+  }
+
+  const locationMaxValues = [...maxStorageByLocation.values()];
+  const nearSaturationCount = locationMaxValues.filter((value) => value >= 0.95).length;
 
   const transitionDiagnostics = {
     medianDayToDayDelta: median(dayToDayDeltas),
@@ -359,6 +373,9 @@ async function main() {
       ? [...dayToDayDeltas].sort((a, b) => a - b)[Math.floor(dayToDayDeltas.length * 0.9)]
       : 0,
     medianPostStormOneDayDrop: median(postRainDecayDeltas),
+    dryDayStorageIncreaseViolations: dryDayStorageIncreaseViolations.length,
+    maxDryDayStorageIncrease: dryDayStorageIncreaseViolations.length ? Math.max(...dryDayStorageIncreaseViolations) : 0,
+    nearSaturationLocationRate: locationMaxValues.length ? nearSaturationCount / locationMaxValues.length : 0,
   };
 
   console.log("Backtest summary:");

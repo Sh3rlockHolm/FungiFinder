@@ -73,9 +73,31 @@ function average(array) {
   return valid.reduce((sum, value) => sum + value, 0) / valid.length;
 }
 
-function simulateMoistureStorage({ rainNewestFirst, tempNewestFirst, vpdNewestFirst, initialStorage = 0.28 }) {
+function quantile(values, q) {
+  const valid = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!valid.length) return 0;
+  const position = clamp(q, 0, 1) * (valid.length - 1);
+  const low = Math.floor(position);
+  const high = Math.ceil(position);
+  if (low === high) return valid[low];
+  const weight = position - low;
+  return valid[low] * (1 - weight) + valid[high] * weight;
+}
+
+function logistic01(value, midpoint, sharpness) {
+  return 1 / (1 + Math.exp(-sharpness * (value - midpoint)));
+}
+
+function simulateMoistureStorage({ rainNewestFirst, tempNewestFirst, vpdNewestFirst, initialStorage = 0.28, rainAnchors }) {
   const steps = Math.min(rainNewestFirst.length, tempNewestFirst.length, vpdNewestFirst.length, 7);
   let storage = clamp(initialStorage, 0, 1);
+  const p50 = Math.max(0.4, rainAnchors?.p50 ?? 0.8);
+  const p85 = Math.max(p50 + 0.6, rainAnchors?.p85 ?? 8);
+  const p98 = Math.max(p85 + 0.8, rainAnchors?.p98 ?? 22);
+  const midpoint = p85;
+  const span = Math.max(1, p98 - p50);
+  const sharpness = 6 / span;
+
   for (let idx = steps - 1; idx >= 0; idx -= 1) {
     const rain = Number.isFinite(rainNewestFirst[idx]) ? Math.max(0, rainNewestFirst[idx]) : 0;
     const temp = Number.isFinite(tempNewestFirst[idx]) ? tempNewestFirst[idx] : 12;
@@ -83,9 +105,16 @@ function simulateMoistureStorage({ rainNewestFirst, tempNewestFirst, vpdNewestFi
     const drying =
       0.58 * scale(Math.max(0, vpd - 0.8), 0, 1.8) +
       0.42 * scale(Math.max(0, temp - 14), 0, 16);
-    const retention = clamp(0.95 - 0.22 * drying, 0.68, 0.96);
-    const recharge = scale(rain, 0, 26) * 0.92;
-    storage = clamp(storage * retention + recharge, 0, 1);
+    const retention = clamp(0.955 - 0.24 * drying, 0.66, 0.965);
+    const dryLoss = clamp(0.012 + 0.058 * drying, 0.01, 0.09);
+    const rechargeShape = logistic01(rain, midpoint, sharpness);
+    const extremeBoost = scale(Math.max(0, rain - p98), 0, Math.max(6, p98)) * 0.06;
+    const recharge = clamp(0.86 * rechargeShape + extremeBoost, 0, 0.94);
+    const baseNext = storage * retention;
+    let nextStorage = baseNext - dryLoss + recharge;
+    // Guardrail: if effectively dry, storage cannot increase.
+    if (rain <= 0.15) nextStorage = Math.min(nextStorage, baseNext - dryLoss);
+    storage = clamp(nextStorage, 0, 1);
   }
   return storage;
 }
@@ -106,6 +135,11 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
   const api14 = computeApiRain(rainHistoryForSupply.slice(0, 14), 5.0);
   const api21 = computeApiRain(rainHistoryForSupply.slice(0, 21), 7.0);
   const antecedentRainTotal = rainHistoryNoCurrent.reduce((sum, value) => sum + value, 0);
+  const localRainAnchors = {
+    p50: quantile(rainHistoryNoCurrent, 0.5),
+    p85: quantile(rainHistoryNoCurrent, 0.85),
+    p98: quantile(rainHistoryNoCurrent, 0.98),
+  };
 
   const moistureSupply = centeredScale(0.45 * api7 + 0.38 * api14 + 0.17 * api21, 0, 3.5, 17, 48);
 
@@ -125,6 +159,7 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
     tempNewestFirst: tempHistory7d,
     vpdNewestFirst: vpdHistory7d,
     initialStorage: soilStorageBase,
+    rainAnchors: localRainAnchors,
   });
   const moistureStorage = clamp(storageReservoir, 0, 1);
 
@@ -169,6 +204,9 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
       moistureStorage,
       moistureSupply,
       nightlyMin3,
+      rainP50: localRainAnchors.p50,
+      rainP85: localRainAnchors.p85,
+      rainP98: localRainAnchors.p98,
       saturationStress,
       storageReservoir,
       topSoilRecent,
