@@ -37,6 +37,12 @@ function shift(dateString, days) {
   return iso(date);
 }
 
+function dayDiff(fromDate, toDate) {
+  const from = new Date(`${fromDate}T00:00:00Z`).getTime();
+  const to = new Date(`${toDate}T00:00:00Z`).getTime();
+  return Math.round((to - from) / 86400000);
+}
+
 function sum(values) {
   return values.reduce((total, value) => total + (Number.isFinite(value) ? value : 0), 0);
 }
@@ -209,6 +215,10 @@ async function buildRowsForLocation(location) {
     const soilHistory7d = Array.from({ length: 7 }, (_, lag) => days[index - lag]?.soilMoistureTop ?? null).filter(Number.isFinite);
     const tempHistory7d = Array.from({ length: 7 }, (_, lag) => days[index - lag]?.meanTemp ?? null).filter(Number.isFinite);
     const vpdHistory7d = Array.from({ length: 7 }, (_, lag) => days[index - lag]?.vpdMean ?? null).filter(Number.isFinite);
+    const rhHistory7d = Array.from({ length: 7 }, (_, lag) => {
+      const date = days[index - lag]?.date;
+      return date ? mean(hourlyByDate.get(date)?.rhValues ?? []) : null;
+    }).filter(Number.isFinite);
     const rain1dAgo = days[index - 1]?.precipitation ?? 0;
     const rain2dAgo = days[index - 2]?.precipitation ?? 0;
     const rain3dAgo = days[index - 3]?.precipitation ?? 0;
@@ -263,6 +273,7 @@ async function buildRowsForLocation(location) {
         soilHistory7d,
         tempHistory7d,
         vpdHistory7d,
+        rhHistory7d,
         recent3TopSoilMoisture: mean(recent3.map((entry) => entry.soilMoistureTop)),
         recent3Vpd: mean(recent3.map((entry) => entry.vpdMean)),
       },
@@ -292,6 +303,7 @@ async function buildRowsForLocation(location) {
       recent3Rain: sum(recent3.map((entry) => entry.precipitation)),
       moistureSupply: featureBundle.moistureSupply,
       moistureStorage: featureBundle.moistureStorage,
+      moistureStorageVol: featureBundle.diagnostics.moistureStorageVolumetric,
       dryingForce: featureBundle.dryingForce,
     });
   }
@@ -348,6 +360,7 @@ async function main() {
     const previous = sortedRows[index - 1];
     const current = sortedRows[index];
     if (previous.location !== current.location) continue;
+    if (dayDiff(previous.date, current.date) !== 1) continue;
     const delta = Math.abs(current.probability - previous.probability);
     dayToDayDeltas.push(delta);
     const stormYesterday = (previous.rainToday ?? 0) >= 12;
@@ -356,16 +369,16 @@ async function main() {
     if (dryToday && (current.moistureStorage ?? 0) - (previous.moistureStorage ?? 0) > 0.01) {
       dryDayStorageIncreaseViolations.push((current.moistureStorage ?? 0) - (previous.moistureStorage ?? 0));
     }
-    const localMax = Math.max(maxStorageByLocation.get(current.location) ?? 0, current.moistureStorage ?? 0);
+    const localMax = Math.max(maxStorageByLocation.get(current.location) ?? 0, current.moistureStorageVol ?? 0);
     maxStorageByLocation.set(current.location, localMax);
   }
   if (sortedRows.length) {
     const first = sortedRows[0];
-    maxStorageByLocation.set(first.location, Math.max(maxStorageByLocation.get(first.location) ?? 0, first.moistureStorage ?? 0));
+    maxStorageByLocation.set(first.location, Math.max(maxStorageByLocation.get(first.location) ?? 0, first.moistureStorageVol ?? 0));
   }
 
   const locationMaxValues = [...maxStorageByLocation.values()];
-  const nearSaturationCount = locationMaxValues.filter((value) => value >= 0.95).length;
+  const nearSaturationCount = locationMaxValues.filter((value) => value >= 0.43).length;
 
   const transitionDiagnostics = {
     medianDayToDayDelta: median(dayToDayDeltas),

@@ -88,9 +88,13 @@ function logistic01(value, midpoint, sharpness) {
   return 1 / (1 + Math.exp(-sharpness * (value - midpoint)));
 }
 
-function simulateMoistureStorage({ rainNewestFirst, tempNewestFirst, vpdNewestFirst, initialStorage = 0.28, rainAnchors }) {
+function simulateMoistureStorage({ rainNewestFirst, tempNewestFirst, vpdNewestFirst, rhNewestFirst, initialStorage = 0.28, rainAnchors }) {
   const steps = Math.min(rainNewestFirst.length, tempNewestFirst.length, vpdNewestFirst.length, 7);
-  let storage = clamp(initialStorage, 0, 1);
+  const wilting = 0.08;
+  const fieldCapacity = 0.32;
+  const saturation = 0.45;
+  const canopy = 0.7;
+  let storage = clamp(initialStorage, wilting, saturation);
   const p50 = Math.max(0.4, rainAnchors?.p50 ?? 0.8);
   const p85 = Math.max(p50 + 0.6, rainAnchors?.p85 ?? 8);
   const p98 = Math.max(p85 + 0.8, rainAnchors?.p98 ?? 22);
@@ -102,19 +106,29 @@ function simulateMoistureStorage({ rainNewestFirst, tempNewestFirst, vpdNewestFi
     const rain = Number.isFinite(rainNewestFirst[idx]) ? Math.max(0, rainNewestFirst[idx]) : 0;
     const temp = Number.isFinite(tempNewestFirst[idx]) ? tempNewestFirst[idx] : 12;
     const vpd = Number.isFinite(vpdNewestFirst[idx]) ? vpdNewestFirst[idx] : 0.8;
+    const rh = Number.isFinite(rhNewestFirst?.[idx]) ? clamp(rhNewestFirst[idx], 10, 100) : 75;
     const drying =
       0.58 * scale(Math.max(0, vpd - 0.8), 0, 1.8) +
       0.42 * scale(Math.max(0, temp - 14), 0, 16);
-    const retention = clamp(0.955 - 0.24 * drying, 0.66, 0.965);
-    const dryLoss = clamp(0.012 + 0.058 * drying, 0.01, 0.09);
-    const rechargeShape = logistic01(rain, midpoint, sharpness);
-    const extremeBoost = scale(Math.max(0, rain - p98), 0, Math.max(6, p98)) * 0.06;
-    const recharge = clamp(0.86 * rechargeShape + extremeBoost, 0, 0.94);
-    const baseNext = storage * retention;
-    let nextStorage = baseNext - dryLoss + recharge;
-    // Guardrail: if effectively dry, storage cannot increase.
-    if (rain <= 0.15) nextStorage = Math.min(nextStorage, baseNext - dryLoss);
-    storage = clamp(nextStorage, 0, 1);
+    const stormIntensity = logistic01(rain, midpoint, sharpness);
+    const interceptionFrac = clamp((0.15 + 0.35 * canopy) * (1 - 0.35 * stormIntensity), 0.12, 0.46);
+    const throughfall = Math.max(0, rain * (1 - interceptionFrac));
+    const infilEfficiency = clamp(0.55 + 0.3 * logistic01(rain, p50, sharpness * 0.8), 0.5, 0.86);
+    const climateInfilCap = clamp(0.018 + 0.055 * logistic01(rain, midpoint, sharpness), 0.018, 0.075);
+    const infiltration = Math.min(throughfall / 1000 * infilEfficiency, climateInfilCap, saturation - storage);
+
+    const drainage = Math.max(0, storage - fieldCapacity) * 0.38;
+    const evapLoss = clamp(
+      (0.0018 + 0.011 * drying) * (1 - rh / 100) * (1 - 0.18 * canopy),
+      0.0003,
+      0.011,
+    );
+    const dryLoss = drainage + evapLoss;
+
+    const baseNext = storage + infiltration - dryLoss;
+    let nextStorage = baseNext;
+    if (rain <= 1) nextStorage = Math.min(nextStorage, storage - dryLoss);
+    storage = clamp(nextStorage, wilting, saturation);
   }
   return storage;
 }
@@ -153,15 +167,18 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
   const rainHistory7d = rainHistory21d.slice(0, 7);
   const tempHistory7d = Array.isArray(previousWindow.tempHistory7d) ? previousWindow.tempHistory7d : [];
   const vpdHistory7d = Array.isArray(previousWindow.vpdHistory7d) ? previousWindow.vpdHistory7d : [];
-  const soilStorageBase = centeredScale(0.7 * topSoilRecent + 0.3 * topSoilHistoryMean, 0.08, 0.18, 0.36, 0.56);
+  const rhHistory7d = Array.isArray(previousWindow.rhHistory7d) ? previousWindow.rhHistory7d : [];
+  const soilStorageBase = clamp(0.7 * topSoilRecent + 0.3 * topSoilHistoryMean, 0.08, 0.45);
   const storageReservoir = simulateMoistureStorage({
     rainNewestFirst: rainHistory7d,
     tempNewestFirst: tempHistory7d,
     vpdNewestFirst: vpdHistory7d,
+    rhNewestFirst: rhHistory7d,
     initialStorage: soilStorageBase,
     rainAnchors: localRainAnchors,
   });
-  const moistureStorage = clamp(storageReservoir, 0, 1);
+  const moistureStorageVolumetric = storageReservoir;
+  const moistureStorage = centeredScale(moistureStorageVolumetric, 0.08, 0.18, 0.36, 0.45);
 
   const vpd3 = Number.isFinite(previousWindow.recent3Vpd) ? previousWindow.recent3Vpd : Number.isFinite(day.vpdMean) ? day.vpdMean : 0;
   const meanTemp3 = Number.isFinite(previousWindow.recent3AvgTemp) ? previousWindow.recent3AvgTemp : day.meanTemp;
@@ -202,6 +219,7 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
       dryingForce,
       meanTemp3,
       moistureStorage,
+      moistureStorageVolumetric,
       moistureSupply,
       nightlyMin3,
       rainP50: localRainAnchors.p50,
