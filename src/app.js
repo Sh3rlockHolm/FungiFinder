@@ -742,6 +742,7 @@ function scoreDay(days, index, todayIndex) {
   const rainHistory21d = Array.from({ length: 21 }, (_, lag) => Math.max(0, days[index - lag]?.precipitation ?? 0));
   const soilHistory7d = Array.from({ length: 7 }, (_, lag) => days[index - lag]?.soilMoistureTop ?? null).filter(Number.isFinite);
   const tempHistory7d = Array.from({ length: 7 }, (_, lag) => days[index - lag]?.meanTemp ?? null).filter(Number.isFinite);
+  const vpdHistory7d = Array.from({ length: 7 }, (_, lag) => days[index - lag]?.vpdMean ?? null).filter(Number.isFinite);
   const day1Ago = days[index - 1] ?? null;
   const day2Ago = days[index - 2] ?? null;
   const day3Ago = days[index - 3] ?? null;
@@ -776,6 +777,7 @@ function scoreDay(days, index, todayIndex) {
     rainHistory21d,
     soilHistory7d,
     tempHistory7d,
+    vpdHistory7d,
     recent3TopSoilMoisture: mean(threeDayWindow.map((day) => day.soilMoistureTop)),
     recent3Vpd: mean(threeDayWindow.map((day) => day.vpdMean)),
   };
@@ -814,7 +816,7 @@ function scoreDay(days, index, todayIndex) {
     weightedTemp72hMax,
     weightedRain72h,
     humidity72hAvg,
-    soilMoisture72hAvg,
+    soilMoisture72hAvg: featureBundle.moistureStorage,
     probability: modelInference.probability,
     score: clamp(score, 0, 100),
     season,
@@ -1077,7 +1079,7 @@ function renderSelectedDay() {
     <div class="metric-pill"><span>Temp (72h weighted min/avg/max)</span><strong>${Number.isFinite(selectedDay.weightedTemp72hMin) ? selectedDay.weightedTemp72hMin.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.weightedTemp72hAvg) ? selectedDay.weightedTemp72hAvg.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.weightedTemp72hMax) ? selectedDay.weightedTemp72hMax.toFixed(1) : "--"} C</strong></div>
     <div class="metric-pill"><span>Rain (72h weighted)</span><strong>${Number.isFinite(selectedDay.weightedRain72h) ? selectedDay.weightedRain72h.toFixed(1) : "--"} mm</strong></div>
     <div class="metric-pill"><span>Humidity (72h weighted avg)</span><strong>${Number.isFinite(selectedDay.humidity72hAvg) ? selectedDay.humidity72hAvg.toFixed(0) : "--"} %</strong></div>
-    <div class="metric-pill"><span>Ground moisture (72h weighted)</span><strong>${Number.isFinite(selectedDay.soilMoisture72hAvg) ? selectedDay.soilMoisture72hAvg.toFixed(3) : "--"} m<sup>3</sup>/m<sup>3</sup></strong></div>
+    <div class="metric-pill"><span>Ground moisture (modeled storage)</span><strong>${Number.isFinite(selectedDay.soilMoisture72hAvg) ? `${Math.round(selectedDay.soilMoisture72hAvg * 100)} %` : "--"}</strong></div>
   `;
   renderRegionalStats();
   renderDaySelector();

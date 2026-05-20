@@ -208,6 +208,7 @@ async function buildRowsForLocation(location) {
     const rainHistory21d = Array.from({ length: 21 }, (_, lag) => Math.max(0, days[index - lag]?.precipitation ?? 0));
     const soilHistory7d = Array.from({ length: 7 }, (_, lag) => days[index - lag]?.soilMoistureTop ?? null).filter(Number.isFinite);
     const tempHistory7d = Array.from({ length: 7 }, (_, lag) => days[index - lag]?.meanTemp ?? null).filter(Number.isFinite);
+    const vpdHistory7d = Array.from({ length: 7 }, (_, lag) => days[index - lag]?.vpdMean ?? null).filter(Number.isFinite);
     const rain1dAgo = days[index - 1]?.precipitation ?? 0;
     const rain2dAgo = days[index - 2]?.precipitation ?? 0;
     const rain3dAgo = days[index - 3]?.precipitation ?? 0;
@@ -261,6 +262,7 @@ async function buildRowsForLocation(location) {
         rainHistory21d,
         soilHistory7d,
         tempHistory7d,
+        vpdHistory7d,
         recent3TopSoilMoisture: mean(recent3.map((entry) => entry.soilMoistureTop)),
         recent3Vpd: mean(recent3.map((entry) => entry.vpdMean)),
       },

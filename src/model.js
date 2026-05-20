@@ -73,6 +73,23 @@ function average(array) {
   return valid.reduce((sum, value) => sum + value, 0) / valid.length;
 }
 
+function simulateMoistureStorage({ rainNewestFirst, tempNewestFirst, vpdNewestFirst, initialStorage = 0.28 }) {
+  const steps = Math.min(rainNewestFirst.length, tempNewestFirst.length, vpdNewestFirst.length, 7);
+  let storage = clamp(initialStorage, 0, 1);
+  for (let idx = steps - 1; idx >= 0; idx -= 1) {
+    const rain = Number.isFinite(rainNewestFirst[idx]) ? Math.max(0, rainNewestFirst[idx]) : 0;
+    const temp = Number.isFinite(tempNewestFirst[idx]) ? tempNewestFirst[idx] : 12;
+    const vpd = Number.isFinite(vpdNewestFirst[idx]) ? vpdNewestFirst[idx] : 0.8;
+    const drying =
+      0.58 * scale(Math.max(0, vpd - 0.8), 0, 1.8) +
+      0.42 * scale(Math.max(0, temp - 14), 0, 16);
+    const retention = clamp(0.95 - 0.22 * drying, 0.68, 0.96);
+    const recharge = scale(rain, 0, 26) * 0.92;
+    storage = clamp(storage * retention + recharge, 0, 1);
+  }
+  return storage;
+}
+
 export function buildModelFeatures({ day, previousWindow, seasonScore, latitude }) {
   const currentRain = Number.isFinite(day.precipitation) ? Math.max(0, day.precipitation) : 0;
   const rainHistory21d = Array.isArray(previousWindow.rainHistory21d)
@@ -99,12 +116,17 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
       : 0;
   const topSoilHistory = Array.isArray(previousWindow.soilHistory7d) ? previousWindow.soilHistory7d : [];
   const topSoilHistoryMean = average(topSoilHistory);
-  const rain1dAgo = rainHistory21d[1] ?? 0;
-  const rain2dAgo = rainHistory21d[2] ?? 0;
-  const immediateRainPulse = scale(currentRain * 1.25 + rain1dAgo * 0.9 + rain2dAgo * 0.35, 0, 30);
+  const rainHistory7d = rainHistory21d.slice(0, 7);
+  const tempHistory7d = Array.isArray(previousWindow.tempHistory7d) ? previousWindow.tempHistory7d : [];
+  const vpdHistory7d = Array.isArray(previousWindow.vpdHistory7d) ? previousWindow.vpdHistory7d : [];
   const soilStorageBase = centeredScale(0.7 * topSoilRecent + 0.3 * topSoilHistoryMean, 0.08, 0.18, 0.36, 0.56);
-  const pulseFloor = immediateRainPulse * 0.82;
-  const moistureStorage = clamp(Math.max(soilStorageBase, pulseFloor), 0, 1);
+  const storageReservoir = simulateMoistureStorage({
+    rainNewestFirst: rainHistory7d,
+    tempNewestFirst: tempHistory7d,
+    vpdNewestFirst: vpdHistory7d,
+    initialStorage: soilStorageBase,
+  });
+  const moistureStorage = clamp(storageReservoir, 0, 1);
 
   const vpd3 = Number.isFinite(previousWindow.recent3Vpd) ? previousWindow.recent3Vpd : Number.isFinite(day.vpdMean) ? day.vpdMean : 0;
   const meanTemp3 = Number.isFinite(previousWindow.recent3AvgTemp) ? previousWindow.recent3AvgTemp : day.meanTemp;
@@ -148,6 +170,7 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
       moistureSupply,
       nightlyMin3,
       saturationStress,
+      storageReservoir,
       topSoilRecent,
       vpd3,
     },
