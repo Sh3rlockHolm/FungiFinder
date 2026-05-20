@@ -169,12 +169,15 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
   const vpdHistory7d = Array.isArray(previousWindow.vpdHistory7d) ? previousWindow.vpdHistory7d : [];
   const rhHistory7d = Array.isArray(previousWindow.rhHistory7d) ? previousWindow.rhHistory7d : [];
   const soilStorageBase = clamp(0.7 * topSoilRecent + 0.3 * topSoilHistoryMean, 0.08, 0.45);
+  const prevModeledStorage = Number.isFinite(previousWindow.prevModeledStorage)
+    ? previousWindow.prevModeledStorage
+    : null;
   const storageReservoir = simulateMoistureStorage({
     rainNewestFirst: rainHistory7d,
     tempNewestFirst: tempHistory7d,
     vpdNewestFirst: vpdHistory7d,
     rhNewestFirst: rhHistory7d,
-    initialStorage: soilStorageBase,
+    initialStorage: prevModeledStorage ?? soilStorageBase,
     rainAnchors: localRainAnchors,
   });
   const moistureStorageVolumetric = storageReservoir;

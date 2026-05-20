@@ -206,6 +206,7 @@ async function buildRowsForLocation(location) {
   }));
 
   const rows = [];
+  let prevModeledStorage = null;
   for (let index = 6; index < days.length - 4; index += BACKTEST_CONFIG.inatDayStride) {
     if (rows.length >= BACKTEST_CONFIG.maxRowsPerLocation) break;
     const day = days[index];
@@ -274,6 +275,7 @@ async function buildRowsForLocation(location) {
         tempHistory7d,
         vpdHistory7d,
         rhHistory7d,
+        prevModeledStorage,
         recent3TopSoilMoisture: mean(recent3.map((entry) => entry.soilMoistureTop)),
         recent3Vpd: mean(recent3.map((entry) => entry.vpdMean)),
       },
@@ -306,6 +308,7 @@ async function buildRowsForLocation(location) {
       moistureStorageVol: featureBundle.diagnostics.moistureStorageVolumetric,
       dryingForce: featureBundle.dryingForce,
     });
+    prevModeledStorage = featureBundle.diagnostics.moistureStorageVolumetric;
   }
   return rows;
 }

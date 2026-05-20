@@ -735,9 +735,9 @@ function windowSlice(days, index, lookbackDays) {
   return days.slice(Math.max(0, index - lookbackDays), index + 1);
 }
 
-function scoreDay(days, index, todayIndex) {
+function scoreDay(days, index, todayIndex, prevModeledStorage = null) {
   const target = days[index];
-  const threeDayWindow = windowSlice(days, index, 3);
+  const threeDayWindow = windowSlice(days, index, 2);
   const previousThreeDayWindow = days.slice(Math.max(0, index - 5), Math.max(0, index - 2));
   const rainHistory21d = Array.from({ length: 21 }, (_, lag) => Math.max(0, days[index - lag]?.precipitation ?? 0));
   const soilHistory7d = Array.from({ length: 7 }, (_, lag) => days[index - lag]?.soilMoistureTop ?? null).filter(Number.isFinite);
@@ -750,11 +750,11 @@ function scoreDay(days, index, todayIndex) {
   const rain1dAgo = day1Ago?.precipitation ?? 0;
   const rain2dAgo = day2Ago?.precipitation ?? 0;
   const rain3dAgo = day3Ago?.precipitation ?? 0;
-  const rain72h = sum(threeDayWindow.map((day) => day.precipitation));
+  const rainLast3d = sum(threeDayWindow.map((day) => day.precipitation));
   const weightedTemp72hMin = weightedMeanOrNull([day1Ago?.minTemp, day2Ago?.minTemp, day3Ago?.minTemp], [0.2, 0.5, 0.3]);
   const weightedTemp72hAvg = weightedMeanOrNull([day1Ago?.meanTemp, day2Ago?.meanTemp, day3Ago?.meanTemp], [0.2, 0.5, 0.3]);
   const weightedTemp72hMax = weightedMeanOrNull([day1Ago?.maxTemp, day2Ago?.maxTemp, day3Ago?.maxTemp], [0.2, 0.5, 0.3]);
-  const weightedRain72h = weightedMean([rain1dAgo, rain2dAgo, rain3dAgo], [0.2, 0.5, 0.3]);
+  const rain3dTotal = rainLast3d;
   const humidity72hAvg = weightedMeanOrNull([day1Ago?.rhMean, day2Ago?.rhMean, day3Ago?.rhMean], [0.2, 0.5, 0.3]);
   const soilMoisture72hAvg = weightedMeanOrNull(
     [day1Ago?.soilMoistureTop, day2Ago?.soilMoistureTop, day3Ago?.soilMoistureTop],
@@ -771,7 +771,7 @@ function scoreDay(days, index, todayIndex) {
     recent3AvgTemp: avgTemp,
     recent3DiurnalRange: diurnalRange,
     recent3NightMin: nightlyMin,
-    recent3Rain: rain72h,
+    recent3Rain: rainLast3d,
     rain1dAgo,
     rain2dAgo,
     rain3dAgo,
@@ -780,6 +780,7 @@ function scoreDay(days, index, todayIndex) {
     tempHistory7d,
     vpdHistory7d,
     rhHistory7d,
+    prevModeledStorage,
     recent3TopSoilMoisture: mean(threeDayWindow.map((day) => day.soilMoistureTop)),
     recent3Vpd: mean(threeDayWindow.map((day) => day.vpdMean)),
   };
@@ -809,14 +810,14 @@ function scoreDay(days, index, todayIndex) {
     factorImportance: modelInference.topFactors,
     diurnalRange,
     nightlyMin,
-    rain72h,
+    rain72h: rainLast3d,
     rain1dAgo,
     rain2dAgo,
     rain3dAgo,
     weightedTemp72hMin,
     weightedTemp72hAvg,
     weightedTemp72hMax,
-    weightedRain72h,
+    weightedRain72h: rain3dTotal,
     humidity72hAvg,
     soilMoisture72hAvg: featureBundle.diagnostics.moistureStorageVolumetric,
     probability: modelInference.probability,
@@ -832,6 +833,17 @@ function scoreDay(days, index, todayIndex) {
       nightlyMin,
     }),
   };
+}
+
+function scoreAllDays(days, todayIndex) {
+  const scored = [];
+  let prevModeledStorage = null;
+  for (let index = 0; index < days.length; index += 1) {
+    const scoredDay = scoreDay(days, index, todayIndex, prevModeledStorage);
+    scored.push(scoredDay);
+    prevModeledStorage = scoredDay.soilMoisture72hAvg;
+  }
+  return scored;
 }
 
 function getSelectedDay() {
@@ -1078,7 +1090,7 @@ function renderSelectedDay() {
   elements.detailVerdict.textContent = selectedDay.verdict;
   elements.detailCopy.textContent = selectedDay.reasons.join(" ");
   elements.detailMetrics.innerHTML = `
-    <p class="metric-method-note">Window: recent 72h weighting for temp, rain, humidity. Ground moisture is modeled daily storage.</p>
+    <p class="metric-method-note">Window: recent 72h for temp and humidity; rain is 3-day total. Ground moisture is modeled daily storage.</p>
     <div class="metric-pill"><span>Temp (min/avg/max)</span><strong>${Number.isFinite(selectedDay.weightedTemp72hMin) ? selectedDay.weightedTemp72hMin.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.weightedTemp72hAvg) ? selectedDay.weightedTemp72hAvg.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.weightedTemp72hMax) ? selectedDay.weightedTemp72hMax.toFixed(1) : "--"} C</strong></div>
     <div class="metric-pill"><span>Rain</span><strong>${Number.isFinite(selectedDay.weightedRain72h) ? selectedDay.weightedRain72h.toFixed(1) : "--"} mm</strong></div>
     <div class="metric-pill"><span>Humidity</span><strong>${Number.isFinite(selectedDay.humidity72hAvg) ? selectedDay.humidity72hAvg.toFixed(0) : "--"} %</strong></div>
@@ -1221,7 +1233,7 @@ async function analyzeLocation(location, shouldMoveMap = true) {
     state.regionalStats = regionalStats;
     const days = normalizeWeather(payload);
     const todayIndex = findTodayIndex(days);
-    state.allDays = days.map((_, index) => scoreDay(days, index, todayIndex));
+    state.allDays = scoreAllDays(days, todayIndex);
     state.scoredDays = state.allDays.slice(todayIndex, todayIndex + 11);
     state.focusDate = state.scoredDays[0]?.date ?? null;
     renderCombinedChart();
