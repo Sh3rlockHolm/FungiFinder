@@ -41,6 +41,7 @@ const elements = {
   mobileOverviewSection: document.querySelector("#mobileOverviewSection"),
   mobileDetailsSection: document.querySelector("#mobileDetailsSection"),
   mobileExamplesSection: document.querySelector("#mobileExamplesSection"),
+  openMapsLink: document.querySelector("#openMapsLink"),
   placeLabel: document.querySelector("#placeLabel"),
   daySelector: document.querySelector("#daySelector"),
   regionalConfidence: document.querySelector("#regionalConfidence"),
@@ -70,6 +71,14 @@ const monthDayFormatter = new Intl.DateTimeFormat(undefined, { month: "short", d
 const shortDateFormatter = new Intl.DateTimeFormat("en-US", { month: "2-digit", day: "2-digit" });
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function roundDownToStep(value, step) {
+  return Math.floor(value / step) * step;
+}
+
+function roundUpToStep(value, step) {
+  return Math.ceil(value / step) * step;
 }
 
 function sum(values) {
@@ -157,6 +166,12 @@ function setStatus(message) {
   elements.dataStatus.textContent = message;
 }
 
+function updateGoogleMapsLink(latitude, longitude) {
+  if (!elements.openMapsLink) return;
+  const query = `${latitude.toFixed(6)},${longitude.toFixed(6)}`;
+  elements.openMapsLink.href = `https://www.google.com/maps?q=${encodeURIComponent(query)}`;
+}
+
 function formatTimelineLabel(dateString) {
   return dayFormatter.format(new Date(`${dateString}T12:00:00`));
 }
@@ -171,6 +186,34 @@ function formatTimelineLabelParts(dateString) {
 
 function formatShortDate(dateString) {
   return shortDateFormatter.format(new Date(`${dateString}T12:00:00`));
+}
+
+function buildRainIntensityBands(rainValues) {
+  const nonZero = rainValues
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((a, b) => a - b);
+  if (!nonZero.length) {
+    return {
+      lightMax: 0,
+      mediumMax: 0,
+      heavyMin: 0,
+      descriptor: "No rain in timeline",
+    };
+  }
+  const quantileAt = (q) => {
+    const position = Math.max(0, Math.min(nonZero.length - 1, Math.floor((nonZero.length - 1) * q)));
+    return nonZero[position];
+  };
+  const lightMax = quantileAt(0.5);
+  const mediumMax = Math.max(lightMax, quantileAt(0.85));
+  const heavyMin = mediumMax;
+  const toMm = (value) => `${value.toFixed(1)} mm`;
+  return {
+    lightMax,
+    mediumMax,
+    heavyMin,
+    descriptor: `Light <= ${toMm(lightMax)} | Medium <= ${toMm(mediumMax)} | Heavy > ${toMm(heavyMin)}`,
+  };
 }
 
 function getSeasonForDate(dateString, latitude) {
@@ -803,6 +846,7 @@ function setSelectedLocation(latitude, longitude, label, shouldMoveMap = true) {
   state.selected = { latitude, longitude, label };
   elements.locationInput.value = label;
   elements.placeLabel.textContent = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+  updateGoogleMapsLink(latitude, longitude);
   if (state.marker) state.marker.setLatLng([latitude, longitude]);
   if (shouldMoveMap && state.map) state.map.setView([latitude, longitude], Math.max(state.map.getZoom(), 9));
 }
@@ -841,10 +885,17 @@ function renderCombinedChart() {
   const visibleSlots = 15;
   const slotWidth = plotWidth / visibleSlots;
   const tempValues = state.allDays.flatMap((day) => [day.minTemp, day.meanTemp, day.maxTemp]);
-  const tempMin = Math.min(Math.floor(Math.min(...tempValues) - 2), 0);
-  const tempMax = Math.max(Math.ceil(Math.max(...tempValues) + 2), 0);
-  const rainMax = Math.max(...state.allDays.map((day) => day.expectedRainfall), 4);
-  const rainTop = Math.ceil(rainMax / 5) * 5;
+  const rawTempMin = Math.min(...tempValues);
+  const rawTempMax = Math.max(...tempValues);
+  const tempMin = rawTempMin < 0 ? roundDownToStep(rawTempMin, 10) : 0;
+  const tempMax = rawTempMax > 30 ? roundUpToStep(rawTempMax, 10) : 30;
+  const rainValues = state.allDays.map((day) => day.expectedRainfall);
+  const rainMax = Math.max(...rainValues, 0);
+  const rainTop = Math.max(10, roundUpToStep(rainMax, 5));
+  const rainBands = buildRainIntensityBands(rainValues);
+  const rainDescriptor = mobile
+    ? `L<=${rainBands.lightMax.toFixed(1)} M<=${rainBands.mediumMax.toFixed(1)} H>${rainBands.heavyMin.toFixed(1)} mm`
+    : rainBands.descriptor;
   const barWidth = Math.max(14, slotWidth - 10);
   const centerIndex = 7;
   const todayDate = new Date().toISOString().slice(0, 10);
@@ -875,8 +926,11 @@ function renderCombinedChart() {
   const markerX = focusIndex >= 0 ? xAt(focusIndex) + targetTranslate : centerX;
   const pastShadeTrackX = todayIndex >= 0 ? xAt(todayIndex) - slotWidth / 2 : null;
 
-  const xLabelStep = mobile ? 4 : tablet ? 2 : 1;
-  const yTickCount = mobile ? 4 : 5;
+  const tempTickValues = [];
+  for (let tick = tempMax; tick >= tempMin; tick -= 10) {
+    tempTickValues.push(tick);
+  }
+  const yTickCount = Math.max(2, tempTickValues.length);
 
   elements.combinedChart.innerHTML = `
     <svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Combined weather timeline">
@@ -885,11 +939,10 @@ function renderCombinedChart() {
           <rect x="${margin.left}" y="${margin.top}" width="${plotWidth}" height="${plotHeight}"></rect>
         </clipPath>
       </defs>
-      ${Array.from({ length: yTickCount }, (_, index) => {
+      ${tempTickValues.map((tempValue, index) => {
         const ratio = yTickCount === 1 ? 0 : index / (yTickCount - 1);
         const y = margin.top + ratio * plotHeight;
-        const tempValue = Math.round(tempMax - ratio * (tempMax - tempMin));
-        const rainValue = Math.round(rainTop - ratio * rainTop);
+        const rainValue = Math.max(0, Math.round((1 - ratio) * rainTop));
         return `
           <line class="grid-line" x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}"></line>
           <text class="y-label" x="${margin.left - 16}" y="${y + 4}" text-anchor="end">${tempValue} C</text>
@@ -923,22 +976,23 @@ function renderCombinedChart() {
         ${avgPoints.map((point, index) => `<circle class="combined-point avg" cx="${point.x}" cy="${point.y}" r="${index === focusIndex ? 5 : 4}"></circle>`).join("")}
         ${maxPoints.map((point, index) => `<circle class="combined-point max" cx="${point.x}" cy="${point.y}" r="${index === focusIndex ? 5 : 4}"></circle>`).join("")}
         ${state.allDays.map((day, index) => {
-          if (index % xLabelStep !== 0 && index !== focusIndex && index !== state.allDays.length - 1) return "";
+          const activeClass = index === focusIndex ? " is-active" : "";
           if (mobile) {
             const label = formatTimelineLabelParts(day.date);
             return `
-              <text class="x-label x-label-mobile" x="${xAt(index)}" y="${height - 26}" text-anchor="middle">
+              <text class="x-label x-label-mobile${activeClass}" x="${xAt(index)}" y="${height - 26}" text-anchor="middle">
                 <tspan x="${xAt(index)}" dy="0">${label.weekday}</tspan>
-                <tspan class="x-label-sub" x="${xAt(index)}" dy="12">${label.monthDay}</tspan>
+                <tspan class="x-label-sub${activeClass}" x="${xAt(index)}" dy="12">${label.monthDay}</tspan>
               </text>
             `;
           }
-          return `<text class="x-label" x="${xAt(index)}" y="${height - 12}" text-anchor="middle">${formatTimelineLabel(day.date)}</text>`;
+          return `<text class="x-label${activeClass}" x="${xAt(index)}" y="${height - 12}" text-anchor="middle">${formatTimelineLabel(day.date)}</text>`;
         }).join("")}
         </g>
       </g>
       <line class="target-marker" x1="${markerX}" y1="${margin.top}" x2="${markerX}" y2="${margin.top + plotHeight}"></line>
       <text class="target-date-label" x="${markerX}" y="${height - 4}" text-anchor="middle">${focusDateShort}</text>
+      <text class="rain-intensity-note" x="${width - margin.right}" y="${margin.top + 12}" text-anchor="end">${rainDescriptor}</text>
     </svg>
   `;
   state.chartLayout = {
@@ -1016,12 +1070,12 @@ function renderSelectedDay() {
   elements.todayVerdict.textContent = selectedDay.verdict;
   elements.confidenceBadge.textContent = selectedDay.confidence;
   elements.analysisTitle.textContent = `${label} evidence`;
-  elements.analysisCopy.textContent = "Tap any day to compare near-term fruiting conditions using weather plus nearby reports.";
+  elements.analysisCopy.textContent = "Select a day to inspect conditions.";
   elements.seasonBadge.textContent = `${selectedDay.season} (weak prior)`;
   elements.detailDateLabel.textContent = label;
   elements.detailScore.textContent = `${selectedDay.score}/100`;
   elements.detailVerdict.textContent = selectedDay.verdict;
-  elements.detailCopy.textContent = `${selectedDay.reasons.join(" ")} Moisture timing uses recent days, with the strongest influence typically from rain about 2 days before. Ground moisture is a modeled topsoil estimate (0-7 cm), not an in-ground sensor read.`;
+  elements.detailCopy.textContent = selectedDay.reasons.join(" ");
   elements.detailMetrics.innerHTML = `
     <div class="metric-pill"><span>Temp (72h weighted min/avg/max)</span><strong>${Number.isFinite(selectedDay.weightedTemp72hMin) ? selectedDay.weightedTemp72hMin.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.weightedTemp72hAvg) ? selectedDay.weightedTemp72hAvg.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.weightedTemp72hMax) ? selectedDay.weightedTemp72hMax.toFixed(1) : "--"} C</strong></div>
     <div class="metric-pill"><span>Rain (72h weighted)</span><strong>${Number.isFinite(selectedDay.weightedRain72h) ? selectedDay.weightedRain72h.toFixed(1) : "--"} mm</strong></div>
@@ -1149,7 +1203,7 @@ async function analyzeLocation(location, shouldMoveMap = true) {
   setSelectedLocation(location.latitude, location.longitude, location.label, shouldMoveMap);
   setStatus("Loading");
   elements.combinedChart.innerHTML = `<div class="loading">Building the weather timeline...</div>`;
-  elements.detailCopy.textContent = "Refreshing weather context for the selected location.";
+  elements.detailCopy.textContent = "Loading weather context for the selected location.";
   state.regionalStats = null;
   state.regionalPage = 1;
   state.regionalRenderedPage = 1;
@@ -1170,7 +1224,7 @@ async function analyzeLocation(location, shouldMoveMap = true) {
     state.focusDate = state.scoredDays[0]?.date ?? null;
     renderCombinedChart();
     renderSelectedDay();
-    elements.contextCopy.textContent = `${state.forestType.replace("-", " ")} forest is a secondary modifier; recent local activity and 72h weather timing lead.`;
+    elements.contextCopy.textContent = `${state.forestType.replace("-", " ")} forest slightly adjusts the baseline signal.`;
     setStatus("Updated");
   } catch (error) {
     console.error(error);
@@ -1183,9 +1237,9 @@ async function analyzeLocation(location, shouldMoveMap = true) {
 function initMap() {
   state.map = L.map("map", { zoomControl: true }).setView([state.selected.latitude, state.selected.longitude], 9);
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "&copy; OpenStreetMap contributors",
-    maxZoom: 18,
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+    attribution: '&copy; OpenStreetMap contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    maxZoom: 20,
   }).addTo(state.map);
 
   const markerIcon = L.divIcon({

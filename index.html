@@ -88,7 +88,18 @@
               <p class="eyebrow">Present day plus one week</p>
               <h2>Foraging Outlook</h2>
             </div>
-            <span id="placeLabel">41.0772, -73.4687</span>
+            <div class="place-actions">
+              <span id="placeLabel">41.0772, -73.4687</span>
+              <a
+                id="openMapsLink"
+                class="ghost-button map-link-button"
+                href="https://www.google.com/maps?q=41.0772,-73.4687"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Open in Google Maps
+              </a>
+            </div>
           </div>
           <section class="analysis-panel" aria-label="Selected day evidence">
             <div class="analysis-header">
@@ -111,9 +122,15 @@
                 <div class="chart-card-header">
                   <div>
                     <h4>General conditions timeline</h4>
-                    <p>Rainfall bars with min, average, and max temperature curves.</p>
+                    <p>Rainfall and temperature trends.</p>
                   </div>
                   <span class="chart-unit">7 days back, 7 ahead</span>
+                </div>
+                <div class="chart-legend" aria-label="Chart legend">
+                  <span class="legend-item"><span class="legend-swatch legend-bar" aria-hidden="true"></span>Rainfall</span>
+                  <span class="legend-item"><span class="legend-swatch legend-line-min" aria-hidden="true"></span>Min temp</span>
+                  <span class="legend-item"><span class="legend-swatch legend-line-avg" aria-hidden="true"></span>Avg temp</span>
+                  <span class="legend-item"><span class="legend-swatch legend-line-max" aria-hidden="true"></span>Max temp</span>
                 </div>
                 <div class="chart-mount chart-mount-wide" id="combinedChart" tabindex="0"></div>
               </section>
