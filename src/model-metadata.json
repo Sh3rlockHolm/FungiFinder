@@ -1,12 +1,12 @@
 {
-  "modelVersion": "v7.2.0",
+  "modelVersion": "v7.3.0",
   "modelType": "guild_mixture_rule_model",
   "calibrationMethod": "bounded_guild_blend",
   "trainedWindow": {
     "from": "2024-01-01",
     "to": "2026-05-20"
   },
-  "featureSchemaHash": "ff-v7_2-rain-persistence-smoothing-20260520",
+  "featureSchemaHash": "ff-v7_3-nonlinear-drydown-20260521",
   "targetDefinition": "P(detectable_fruiting_presence_local_window_2_3d)",
   "radiusKm": 50
 }

@@ -1,12 +1,12 @@
 export const MODEL_METADATA = {
-  modelVersion: "v7.2.0",
+  modelVersion: "v7.3.0",
   modelType: "guild_mixture_rule_model",
   calibrationMethod: "bounded_guild_blend",
   trainedWindow: {
     from: "2024-01-01",
     to: "2026-05-20",
   },
-  featureSchemaHash: "ff-v7_2-rain-persistence-smoothing-20260520",
+  featureSchemaHash: "ff-v7_3-nonlinear-drydown-20260521",
   targetDefinition: "P(detectable_fruiting_presence_local_window_2_3d)",
   radiusKm: 50,
 };
@@ -158,6 +158,26 @@ function tailFromHalfLife(daysSince, halfLifeDays) {
   return Math.exp((-Math.log(2) * daysSince) / Math.max(0.35, halfLifeDays));
 }
 
+function findDaysSinceSignificantRain(rainHistory21d, significantThreshold) {
+  for (let index = 0; index < rainHistory21d.length; index += 1) {
+    if ((rainHistory21d[index] ?? 0) >= significantThreshold) return index;
+  }
+  return 999;
+}
+
+// Non-linear drydown: hold near-plateau for 1-2 days, gentle fade to day 4,
+// then stronger decay once dryness persists beyond ~4-5 days.
+function drydownPersistenceFactor(daysSinceSignificantRain) {
+  if (!Number.isFinite(daysSinceSignificantRain) || daysSinceSignificantRain < 0) return 1;
+  if (daysSinceSignificantRain <= 2) return 1;
+  if (daysSinceSignificantRain <= 4) {
+    const t = (daysSinceSignificantRain - 2) / 2;
+    return 1 - 0.14 * t;
+  }
+  const late = daysSinceSignificantRain - 4;
+  return Math.max(0.16, 0.86 * Math.exp(-0.42 * late));
+}
+
 function normalizeWeights(raw) {
   const entries = Object.entries(raw).map(([key, value]) => [key, Math.max(0, Number.isFinite(value) ? value : 0)]);
   const sum = entries.reduce((acc, [, value]) => acc + value, 0);
@@ -177,6 +197,8 @@ function buildGuildRainSignal({ rainHistory21d, currentRain, meanTemp3, vpd3, gu
   const recentWindow = rainHistory21d.slice(0, 11);
   const peakRainAmount = recentWindow.reduce((best, value) => (value > best ? value : best), 0);
   const daysSincePeakRain = recentWindow.indexOf(peakRainAmount);
+  const daysSinceSignificantRain = findDaysSinceSignificantRain(rainHistory21d, thresholds.significant);
+  const drydownFactor = drydownPersistenceFactor(daysSinceSignificantRain);
 
   const normalizedEventStrength = clamp(scale(peakRainAmount, thresholds.light, thresholds.severe), 0, 1);
   const severeShare = clamp(scale(peakRainAmount, thresholds.heavy, thresholds.severe), 0, 1);
@@ -197,6 +219,10 @@ function buildGuildRainSignal({ rainHistory21d, currentRain, meanTemp3, vpd3, gu
     .reduce((sum, rain, idx) => sum + (Number.isFinite(rain) ? rain : 0) * Math.exp(-0.35 * idx), 0);
   const persistenceSupport = centeredScale(rainPersistence7d, 0, 6, 18, 44);
 
+  const laggedBoostAdjusted = laggedBoost * drydownFactor;
+  const tailBoostAdjusted = tailBoost * drydownFactor;
+  const persistenceAdjusted = persistenceSupport * drydownFactor;
+
   const tempDrying = Math.max(
     scale(meanTemp3, guildConfig.drying.tempMidC, guildConfig.drying.tempHighC),
     scale(meanTemp3, guildConfig.drying.tempHighC, guildConfig.drying.tempHighC + 5),
@@ -214,7 +240,7 @@ function buildGuildRainSignal({ rainHistory21d, currentRain, meanTemp3, vpd3, gu
     (guildConfig === SCORING_CONFIG.guildConfigs.winter_frost_tolerant ? 0.06 : guildConfig === SCORING_CONFIG.guildConfigs.fall_cool_moist ? 0.1 : 0.12);
 
   let rainEventComponent = clamp(
-    (0.44 * laggedBoost + 0.36 * dryingAdjustedTail + 0.2 * persistenceSupport) * climatePreset.rainBoostMultiplier - rainDaySuppression,
+    (0.44 * laggedBoostAdjusted + 0.36 * (dryingAdjustedTail * drydownFactor) + 0.2 * persistenceAdjusted) * climatePreset.rainBoostMultiplier - rainDaySuppression,
     0,
     1,
   );
@@ -227,7 +253,12 @@ function buildGuildRainSignal({ rainHistory21d, currentRain, meanTemp3, vpd3, gu
     daysSincePeakRain,
     laggedBoost,
     tailBoost,
+    laggedBoostAdjusted,
+    tailBoostAdjusted,
     persistenceSupport,
+    persistenceAdjusted,
+    daysSinceSignificantRain,
+    drydownFactor,
     dryingAdjustedTail,
     dryingIndex,
     peakRainAmount,
