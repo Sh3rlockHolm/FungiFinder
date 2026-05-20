@@ -78,11 +78,16 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
   const rainHistory21d = Array.isArray(previousWindow.rainHistory21d)
     ? previousWindow.rainHistory21d.map((value) => (Number.isFinite(value) ? Math.max(0, value) : 0))
     : [];
+  const rainHistoryForSupply = [...rainHistory21d];
+  if (rainHistoryForSupply.length) {
+    // Keep same-day rain influence moderate but non-zero so moisture response is immediate.
+    rainHistoryForSupply[0] = rainHistoryForSupply[0] * 0.65;
+  }
 
   const rainHistoryNoCurrent = rainHistory21d.slice(1);
-  const api7 = computeApiRain(rainHistoryNoCurrent.slice(0, 7), 3.2);
-  const api14 = computeApiRain(rainHistoryNoCurrent.slice(0, 14), 5.0);
-  const api21 = computeApiRain(rainHistoryNoCurrent.slice(0, 21), 7.0);
+  const api7 = computeApiRain(rainHistoryForSupply.slice(0, 7), 3.2);
+  const api14 = computeApiRain(rainHistoryForSupply.slice(0, 14), 5.0);
+  const api21 = computeApiRain(rainHistoryForSupply.slice(0, 21), 7.0);
   const antecedentRainTotal = rainHistoryNoCurrent.reduce((sum, value) => sum + value, 0);
 
   const moistureSupply = centeredScale(0.45 * api7 + 0.38 * api14 + 0.17 * api21, 0, 3.5, 17, 48);
@@ -94,7 +99,11 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
       : 0;
   const topSoilHistory = Array.isArray(previousWindow.soilHistory7d) ? previousWindow.soilHistory7d : [];
   const topSoilHistoryMean = average(topSoilHistory);
-  const moistureStorage = centeredScale(0.7 * topSoilRecent + 0.3 * topSoilHistoryMean, 0.08, 0.18, 0.36, 0.56);
+  const rain1dAgo = rainHistory21d[1] ?? 0;
+  const rain2dAgo = rainHistory21d[2] ?? 0;
+  const quickRecharge = scale(currentRain * 0.6 + rain1dAgo * 0.85 + rain2dAgo * 0.45, 0, 26);
+  const soilStorageBase = centeredScale(0.7 * topSoilRecent + 0.3 * topSoilHistoryMean, 0.08, 0.18, 0.36, 0.56);
+  const moistureStorage = clamp(soilStorageBase + 0.28 * quickRecharge, 0, 1);
 
   const vpd3 = Number.isFinite(previousWindow.recent3Vpd) ? previousWindow.recent3Vpd : Number.isFinite(day.vpdMean) ? day.vpdMean : 0;
   const meanTemp3 = Number.isFinite(previousWindow.recent3AvgTemp) ? previousWindow.recent3AvgTemp : day.meanTemp;

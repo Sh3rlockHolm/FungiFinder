@@ -1068,7 +1068,7 @@ function renderSelectedDay() {
   elements.confidenceBadge.textContent = selectedDay.confidence;
   elements.analysisTitle.textContent = `${label} evidence`;
   elements.analysisCopy.textContent = "Select a day to inspect conditions.";
-  elements.seasonBadge.textContent = `${selectedDay.season} seasonal context`;
+  if (elements.seasonBadge) elements.seasonBadge.textContent = `${selectedDay.season} seasonal context`;
   elements.detailDateLabel.textContent = label;
   elements.detailScore.textContent = `${selectedDay.score}/100`;
   elements.detailVerdict.textContent = selectedDay.verdict;
