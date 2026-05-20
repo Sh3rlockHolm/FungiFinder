@@ -240,12 +240,12 @@ function seasonScoreForDate(dateString, latitude) {
   return 24;
 }
 
-function buildReasons({ rainEventClass, laggedBoost, tailBoost, dryingPenalty, avgTemp, nightlyMin }) {
+function buildReasons({ rainEventClass, rain5dResponse, crashPhase, dryingPenalty, avgTemp, nightlyMin }) {
   const reasons = [];
-  if (laggedBoost >= 0.55) reasons.push("Recent rain timing is in a strong post-rain fruiting window.");
-  else if (tailBoost >= 0.4) reasons.push("Moisture tail from recent rain is still supportive.");
+  if (rain5dResponse >= 0.62) reasons.push("Recent 5-day moisture support is strongly favorable.");
+  else if (rain5dResponse >= 0.4) reasons.push("Recent 5-day moisture support is moderate and still helpful.");
   else if (rainEventClass === "none") reasons.push("No significant recent rain event is supporting fruiting.");
-  else reasons.push("Rain support is present but not near peak timing.");
+  else reasons.push("Moisture support is present but limited.");
 
   if (avgTemp >= 7 && avgTemp <= 24) reasons.push("Average temperature is favorable for active seasonal guilds.");
   else if (avgTemp < 2) reasons.push("Only cold-tolerant guilds are likely to remain active.");
@@ -253,6 +253,7 @@ function buildReasons({ rainEventClass, laggedBoost, tailBoost, dryingPenalty, a
   else reasons.push("Temperature is workable but not ideal for the dominant guild mix.");
 
   if (dryingPenalty >= 0.1) reasons.push("Drying air and warmth are reducing moisture persistence.");
+  if (crashPhase === "crash") reasons.push("Dryness-phase transition is now reducing carryover from earlier rain.");
 
   if (nightlyMin < -1) reasons.push("Recent frost is a strong negative signal.");
   else if (nightlyMin < 4) reasons.push("Cold nights reduce confidence.");
@@ -801,8 +802,8 @@ function scoreDay(days, index, todayIndex) {
     verdict: scoreToVerdict(modelInference.probability),
     reasons: buildReasons({
       rainEventClass: featureBundle.diagnostics.rainEventClass,
-      laggedBoost: featureBundle.diagnostics.laggedBoost,
-      tailBoost: featureBundle.diagnostics.tailBoost,
+      rain5dResponse: featureBundle.diagnostics.rain5d_response,
+      crashPhase: featureBundle.diagnostics.crashPhase,
       dryingPenalty: featureBundle.dryingPenalty,
       avgTemp,
       nightlyMin,

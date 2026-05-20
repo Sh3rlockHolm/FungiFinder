@@ -1,12 +1,12 @@
 {
-  "modelVersion": "v7.4.0",
-  "modelType": "guild_mixture_rule_model",
-  "calibrationMethod": "bounded_guild_blend",
+  "modelVersion": "v8.0.0",
+  "modelType": "guild_mixture_rain5d_model",
+  "calibrationMethod": "bounded_guild_blend_rain5d",
   "trainedWindow": {
     "from": "2024-01-01",
     "to": "2026-05-20"
   },
-  "featureSchemaHash": "ff-v7_4-event-kernel-20260521",
+  "featureSchemaHash": "ff-v8_0-rain5d-hybrid-crash-20260521",
   "targetDefinition": "P(detectable_fruiting_presence_local_window_2_3d)",
   "radiusKm": 50
 }
