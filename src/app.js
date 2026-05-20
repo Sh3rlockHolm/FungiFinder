@@ -247,10 +247,10 @@ function buildReasons({ rainEventClass, laggedBoost, tailBoost, dryingPenalty, a
   else if (rainEventClass === "none") reasons.push("No significant recent rain event is supporting fruiting.");
   else reasons.push("Rain support is present but not near peak timing.");
 
-  if (avgTemp >= 8 && avgTemp <= 18) reasons.push("Average temperature is in a good range.");
-  else if (avgTemp < 5) reasons.push("Temperatures are likely too cold.");
-  else if (avgTemp >= 30) reasons.push("Very hot conditions usually suppress fruiting.");
-  else reasons.push("Warmer-than-ideal conditions may shorten the fruiting window.");
+  if (avgTemp >= 7 && avgTemp <= 24) reasons.push("Average temperature is favorable for active seasonal guilds.");
+  else if (avgTemp < 2) reasons.push("Only cold-tolerant guilds are likely to remain active.");
+  else if (avgTemp >= 30) reasons.push("Sustained heat can suppress many fruiting guilds.");
+  else reasons.push("Temperature is workable but not ideal for the dominant guild mix.");
 
   if (dryingPenalty >= 0.1) reasons.push("Drying air and warmth are reducing moisture persistence.");
 

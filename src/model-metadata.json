@@ -1,12 +1,12 @@
 {
-  "modelVersion": "v6.2.0",
-  "modelType": "rule_driven_rain_event_scoring",
-  "calibrationMethod": "bounded_component_blend",
+  "modelVersion": "v7.0.0",
+  "modelType": "guild_mixture_rule_model",
+  "calibrationMethod": "bounded_guild_blend",
   "trainedWindow": {
     "from": "2024-01-01",
     "to": "2026-05-20"
   },
-  "featureSchemaHash": "ff-v6_2-warm-season-rebalance-20260520",
+  "featureSchemaHash": "ff-v7_0-guild-mixture-20260520",
   "targetDefinition": "P(detectable_fruiting_presence_local_window_2_3d)",
   "radiusKm": 50
 }

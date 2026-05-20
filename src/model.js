@@ -1,93 +1,99 @@
 export const MODEL_METADATA = {
-  modelVersion: "v6.2.0",
-  modelType: "rule_driven_rain_event_scoring",
-  calibrationMethod: "bounded_component_blend",
+  modelVersion: "v7.0.0",
+  modelType: "guild_mixture_rule_model",
+  calibrationMethod: "bounded_guild_blend",
   trainedWindow: {
     from: "2024-01-01",
     to: "2026-05-20",
   },
-  featureSchemaHash: "ff-v6_2-warm-season-rebalance-20260520",
+  featureSchemaHash: "ff-v7_0-guild-mixture-20260520",
   targetDefinition: "P(detectable_fruiting_presence_local_window_2_3d)",
   radiusKm: 50,
 };
 
 export const SCORING_CONFIG = {
-  rainThresholdsMm: {
-    light: 1.5,
-    medium: 6,
-    heavy: 12,
-    severe: 22,
-    significant: 6,
+  globalConfig: {
+    rainThresholdsMm: {
+      light: 1.5,
+      medium: 6,
+      heavy: 12,
+      severe: 22,
+      significant: 6,
+    },
+    scoreBounds: { min: 0.06, max: 0.97 },
+    horizonPenaltyMax: 0.13,
+    sparseRegionalPenalty: 0.015,
   },
-  lagDefaults: {
-    peakDayMin: 1.1,
-    peakDayMax: 3.2,
-    widthDays: 1.8,
-    severePeakShift: 0.55,
+  guildConfigs: {
+    summer_warm_humid: {
+      temperatureWindow: { low: 4, bestLow: 16, bestHigh: 27, high: 36 },
+      rain: { peakDayMin: 1.0, peakDayMax: 2.8, peakShiftSevere: 0.45, widthDays: 1.9, baseHalfLife: 2.6, heavyBonus: 1.6, severeBonus: 2.8 },
+      drying: { tempMidC: 23, tempHighC: 30, vpdMid: 1.0, vpdHigh: 1.7, tailReductionAtMaxDrying: 0.52 },
+      frost: { startC: 2, severeC: -4, maxPenalty: 0.2 },
+      weights: { rain: 0.45, temp: 0.35, drying: 0.1, frost: 0.1 },
+    },
+    fall_cool_moist: {
+      temperatureWindow: { low: 0, bestLow: 8, bestHigh: 17, high: 27 },
+      rain: { peakDayMin: 1.3, peakDayMax: 3.4, peakShiftSevere: 0.6, widthDays: 1.85, baseHalfLife: 3.0, heavyBonus: 1.9, severeBonus: 3.2 },
+      drying: { tempMidC: 20, tempHighC: 27, vpdMid: 0.95, vpdHigh: 1.55, tailReductionAtMaxDrying: 0.47 },
+      frost: { startC: 3, severeC: -2, maxPenalty: 0.36 },
+      weights: { rain: 0.46, temp: 0.3, drying: 0.08, frost: 0.16 },
+    },
+    winter_frost_tolerant: {
+      temperatureWindow: { low: -10, bestLow: 1, bestHigh: 10, high: 18 },
+      rain: { peakDayMin: 1.7, peakDayMax: 4.0, peakShiftSevere: 0.7, widthDays: 2.1, baseHalfLife: 3.8, heavyBonus: 2.2, severeBonus: 3.6 },
+      drying: { tempMidC: 15, tempHighC: 23, vpdMid: 0.9, vpdHigh: 1.4, tailReductionAtMaxDrying: 0.38 },
+      frost: { startC: 0, severeC: -8, maxPenalty: 0.1 },
+      weights: { rain: 0.44, temp: 0.28, drying: 0.1, frost: 0.06 },
+    },
   },
-  tailDefaults: {
-    baseHalfLifeDays: 2.8,
-    severeHalfLifeBonusDays: 3.1,
-    heavyHalfLifeBonusDays: 1.8,
-    maxTailDays: 10,
-  },
-  dryingMultipliers: {
-    tempMidC: 22,
-    tempHighC: 28,
-    vpdMid: 1.05,
-    vpdHigh: 1.6,
-    tailReductionAtMaxDrying: 0.48,
-  },
-  saturationSuppression: {
-    startMm: 18,
-    fullMm: 38,
-    maxPenalty: 0.14,
-  },
-  temperatureWindow: {
-    low: 0,
-    bestLow: 9,
-    bestHigh: 26,
-    high: 35,
-  },
-  coldPenalty: {
-    startC: 3,
-    severeC: -3,
-    maxPenalty: 0.34,
-  },
-  componentWeights: {
-    rainEvent: 0.47,
-    temperature: 0.34,
-    drying: 0.08,
-    cold: 0.08,
-    seasonal: 0.03,
-  },
-  scoreBounds: {
-    min: 0.06,
-    max: 0.97,
+  guildPriors: {
+    northern: {
+      1: { summer_warm_humid: 0.08, fall_cool_moist: 0.2, winter_frost_tolerant: 0.72 },
+      2: { summer_warm_humid: 0.1, fall_cool_moist: 0.2, winter_frost_tolerant: 0.7 },
+      3: { summer_warm_humid: 0.2, fall_cool_moist: 0.42, winter_frost_tolerant: 0.38 },
+      4: { summer_warm_humid: 0.34, fall_cool_moist: 0.46, winter_frost_tolerant: 0.2 },
+      5: { summer_warm_humid: 0.52, fall_cool_moist: 0.36, winter_frost_tolerant: 0.12 },
+      6: { summer_warm_humid: 0.66, fall_cool_moist: 0.26, winter_frost_tolerant: 0.08 },
+      7: { summer_warm_humid: 0.7, fall_cool_moist: 0.22, winter_frost_tolerant: 0.08 },
+      8: { summer_warm_humid: 0.62, fall_cool_moist: 0.3, winter_frost_tolerant: 0.08 },
+      9: { summer_warm_humid: 0.32, fall_cool_moist: 0.56, winter_frost_tolerant: 0.12 },
+      10: { summer_warm_humid: 0.18, fall_cool_moist: 0.62, winter_frost_tolerant: 0.2 },
+      11: { summer_warm_humid: 0.1, fall_cool_moist: 0.42, winter_frost_tolerant: 0.48 },
+      12: { summer_warm_humid: 0.06, fall_cool_moist: 0.22, winter_frost_tolerant: 0.72 },
+    },
+    southern: {
+      1: { summer_warm_humid: 0.66, fall_cool_moist: 0.26, winter_frost_tolerant: 0.08 },
+      2: { summer_warm_humid: 0.7, fall_cool_moist: 0.22, winter_frost_tolerant: 0.08 },
+      3: { summer_warm_humid: 0.62, fall_cool_moist: 0.3, winter_frost_tolerant: 0.08 },
+      4: { summer_warm_humid: 0.32, fall_cool_moist: 0.56, winter_frost_tolerant: 0.12 },
+      5: { summer_warm_humid: 0.18, fall_cool_moist: 0.62, winter_frost_tolerant: 0.2 },
+      6: { summer_warm_humid: 0.1, fall_cool_moist: 0.42, winter_frost_tolerant: 0.48 },
+      7: { summer_warm_humid: 0.06, fall_cool_moist: 0.22, winter_frost_tolerant: 0.72 },
+      8: { summer_warm_humid: 0.08, fall_cool_moist: 0.2, winter_frost_tolerant: 0.72 },
+      9: { summer_warm_humid: 0.1, fall_cool_moist: 0.2, winter_frost_tolerant: 0.7 },
+      10: { summer_warm_humid: 0.2, fall_cool_moist: 0.42, winter_frost_tolerant: 0.38 },
+      11: { summer_warm_humid: 0.34, fall_cool_moist: 0.46, winter_frost_tolerant: 0.2 },
+      12: { summer_warm_humid: 0.52, fall_cool_moist: 0.36, winter_frost_tolerant: 0.12 },
+    },
   },
 };
 
 export const CLIMATE_PRESETS = {
   humid: {
-    lagPeakShiftDays: -0.2,
-    tailHalfLifeMultiplier: 1.18,
-    dryingPenaltyMultiplier: 0.88,
-    rainBoostMultiplier: 1.1,
-    temperaturePenaltyMultiplier: 0.95,
+    guildPriorMultipliers: { summer_warm_humid: 1.12, fall_cool_moist: 1.04, winter_frost_tolerant: 0.94 },
+    rainBoostMultiplier: 1.08,
+    dryingPenaltyMultiplier: 0.9,
   },
   temperate: {
-    lagPeakShiftDays: 0,
-    tailHalfLifeMultiplier: 1,
-    dryingPenaltyMultiplier: 1,
+    guildPriorMultipliers: { summer_warm_humid: 1, fall_cool_moist: 1, winter_frost_tolerant: 1 },
     rainBoostMultiplier: 1,
-    temperaturePenaltyMultiplier: 1,
+    dryingPenaltyMultiplier: 1,
   },
   dry_continental: {
-    lagPeakShiftDays: 0.25,
-    tailHalfLifeMultiplier: 0.88,
-    dryingPenaltyMultiplier: 1.14,
+    guildPriorMultipliers: { summer_warm_humid: 0.95, fall_cool_moist: 1.02, winter_frost_tolerant: 1.08 },
     rainBoostMultiplier: 0.96,
-    temperaturePenaltyMultiplier: 1.06,
+    dryingPenaltyMultiplier: 1.14,
   },
 };
 
@@ -96,7 +102,7 @@ const FACTOR_LABELS = {
   temperatureComponent: "Temperature suitability",
   dryingPenalty: "Drying penalty",
   coldPenalty: "Cold penalty",
-  seasonalComponent: "Seasonal context",
+  seasonalComponent: "Seasonal guild prior",
 };
 
 function clamp(value, min, max) {
@@ -133,7 +139,6 @@ function classifyRainEvent(amountMm, thresholds) {
 }
 
 function gaussianPeak(daysSince, peakDay, width) {
-  if (!Number.isFinite(daysSince)) return 0;
   const z = (daysSince - peakDay) / Math.max(0.25, width);
   return Math.exp(-0.5 * z * z);
 }
@@ -143,206 +148,263 @@ function tailFromHalfLife(daysSince, halfLifeDays) {
   return Math.exp((-Math.log(2) * daysSince) / Math.max(0.35, halfLifeDays));
 }
 
-function findMostRecentSignificantRain(rainHistory21d, significantThreshold) {
-  for (let index = 0; index < rainHistory21d.length; index += 1) {
-    if ((rainHistory21d[index] ?? 0) >= significantThreshold) return index;
+function normalizeWeights(raw) {
+  const entries = Object.entries(raw).map(([key, value]) => [key, Math.max(0, Number.isFinite(value) ? value : 0)]);
+  const sum = entries.reduce((acc, [, value]) => acc + value, 0);
+  if (sum <= 0) {
+    const n = entries.length || 1;
+    return Object.fromEntries(entries.map(([key]) => [key, 1 / n]));
   }
-  return null;
+  return Object.fromEntries(entries.map(([key, value]) => [key, value / sum]));
 }
 
-function buildRainEventSignal({ day, previousWindow, preset }) {
-  const thresholds = SCORING_CONFIG.rainThresholdsMm;
-  const rainHistory21d = Array.isArray(previousWindow.rainHistory21d)
-    ? previousWindow.rainHistory21d.map((value) => (Number.isFinite(value) ? Math.max(0, value) : 0))
-    : [];
-  const currentRain = Number.isFinite(day.precipitation) ? Math.max(0, day.precipitation) : 0;
-  if (!rainHistory21d.length) rainHistory21d.push(currentRain);
+function monthFromDate(dateString) {
+  const month = new Date(`${dateString}T12:00:00`).getUTCMonth() + 1;
+  return Number.isFinite(month) && month >= 1 && month <= 12 ? month : 6;
+}
 
-  const recentWindow = rainHistory21d.slice(0, SCORING_CONFIG.tailDefaults.maxTailDays + 1);
+function buildGuildRainSignal({ rainHistory21d, currentRain, meanTemp3, vpd3, guildConfig, climatePreset, thresholds }) {
+  const recentWindow = rainHistory21d.slice(0, 11);
   const peakRainAmount = recentWindow.reduce((best, value) => (value > best ? value : best), 0);
   const daysSincePeakRain = recentWindow.indexOf(peakRainAmount);
-  const rainEventClass = classifyRainEvent(peakRainAmount, thresholds);
 
-  const daysSinceLastSignificantRain = findMostRecentSignificantRain(rainHistory21d, thresholds.significant);
   const normalizedEventStrength = clamp(scale(peakRainAmount, thresholds.light, thresholds.severe), 0, 1);
-
   const severeShare = clamp(scale(peakRainAmount, thresholds.heavy, thresholds.severe), 0, 1);
-  const peakDayBase =
-    SCORING_CONFIG.lagDefaults.peakDayMin +
-    (SCORING_CONFIG.lagDefaults.peakDayMax - SCORING_CONFIG.lagDefaults.peakDayMin) * severeShare;
-  const lagPeakDay = clamp(
-    peakDayBase + SCORING_CONFIG.lagDefaults.severePeakShift * severeShare + (preset.lagPeakShiftDays ?? 0),
-    0.8,
-    5,
+
+  const peakDay =
+    guildConfig.rain.peakDayMin +
+    (guildConfig.rain.peakDayMax - guildConfig.rain.peakDayMin) * severeShare +
+    guildConfig.rain.peakShiftSevere * severeShare;
+  const laggedBoost = gaussianPeak(daysSincePeakRain, peakDay, guildConfig.rain.widthDays) * normalizedEventStrength;
+
+  const halfLife =
+    guildConfig.rain.baseHalfLife +
+    guildConfig.rain.heavyBonus * clamp(scale(peakRainAmount, thresholds.medium, thresholds.heavy), 0, 1) +
+    guildConfig.rain.severeBonus * severeShare;
+  const tailBoost = tailFromHalfLife(daysSincePeakRain, halfLife) * normalizedEventStrength;
+
+  const tempDrying = Math.max(
+    scale(meanTemp3, guildConfig.drying.tempMidC, guildConfig.drying.tempHighC),
+    scale(meanTemp3, guildConfig.drying.tempHighC, guildConfig.drying.tempHighC + 5),
   );
+  const vpdDrying = Math.max(
+    scale(vpd3, guildConfig.drying.vpdMid, guildConfig.drying.vpdHigh),
+    scale(vpd3, guildConfig.drying.vpdHigh, guildConfig.drying.vpdHigh + 0.5),
+  );
+  const dryingIndex = clamp(0.58 * vpdDrying + 0.42 * tempDrying, 0, 1);
+  const dryingReduction = guildConfig.drying.tailReductionAtMaxDrying * dryingIndex * climatePreset.dryingPenaltyMultiplier;
+  const dryingAdjustedTail = tailBoost * (1 - dryingReduction);
 
-  const laggedBoost =
-    gaussianPeak(daysSincePeakRain, lagPeakDay, SCORING_CONFIG.lagDefaults.widthDays) * normalizedEventStrength;
+  const rainDaySuppression =
+    scale(currentRain, 18, 38) *
+    (guildConfig === SCORING_CONFIG.guildConfigs.winter_frost_tolerant ? 0.06 : guildConfig === SCORING_CONFIG.guildConfigs.fall_cool_moist ? 0.1 : 0.12);
 
-  const halfLifeDaysBase =
-    SCORING_CONFIG.tailDefaults.baseHalfLifeDays +
-    SCORING_CONFIG.tailDefaults.heavyHalfLifeBonusDays * clamp(scale(peakRainAmount, thresholds.medium, thresholds.heavy), 0, 1) +
-    SCORING_CONFIG.tailDefaults.severeHalfLifeBonusDays * severeShare;
-  const tailHalfLifeDays = halfLifeDaysBase * (preset.tailHalfLifeMultiplier ?? 1);
-  const tailBoost = tailFromHalfLife(daysSincePeakRain, tailHalfLifeDays) * normalizedEventStrength;
+  let rainEventComponent = clamp(
+    (0.56 * laggedBoost + 0.44 * dryingAdjustedTail) * climatePreset.rainBoostMultiplier - rainDaySuppression,
+    0,
+    1,
+  );
+  if (daysSincePeakRain >= 1 && daysSincePeakRain <= 3 && peakRainAmount >= thresholds.heavy) {
+    rainEventComponent = clamp(rainEventComponent + 0.07, 0, 1);
+  }
+
+  return {
+    rainEventClass: classifyRainEvent(peakRainAmount, thresholds),
+    daysSincePeakRain,
+    laggedBoost,
+    tailBoost,
+    dryingAdjustedTail,
+    dryingIndex,
+    peakRainAmount,
+    rainEventComponent,
+  };
+}
+
+function blendGuildScores({ guildScores, guildWeights, monthlyPriors }) {
+  const blended = {
+    rainEventComponent: 0,
+    temperatureComponent: 0,
+    dryingPenalty: 0,
+    coldPenalty: 0,
+    ecologicalScore: 0,
+  };
+
+  Object.keys(guildScores).forEach((guildKey) => {
+    const w = guildWeights[guildKey] ?? 0;
+    const score = guildScores[guildKey];
+    blended.rainEventComponent += w * score.rainEventComponent;
+    blended.temperatureComponent += w * score.temperatureComponent;
+    blended.dryingPenalty += w * score.dryingPenalty;
+    blended.coldPenalty += w * score.coldPenalty;
+    blended.ecologicalScore += w * score.guildScore;
+  });
+
+  blended.seasonalComponent = Object.keys(monthlyPriors).reduce((acc, guildKey) => {
+    const prior = monthlyPriors[guildKey] ?? 0;
+    const weight = guildWeights[guildKey] ?? 0;
+    return acc + prior * weight;
+  }, 0);
+
+  return blended;
+}
+
+export function buildModelFeatures({ day, previousWindow, seasonScore, latitude }) {
+  const currentRain = Number.isFinite(day.precipitation) ? Math.max(0, day.precipitation) : 0;
+  const rainHistory21d = Array.isArray(previousWindow.rainHistory21d)
+    ? previousWindow.rainHistory21d.map((value) => (Number.isFinite(value) ? Math.max(0, value) : 0))
+    : [currentRain];
 
   const meanTemp3 = Number.isFinite(previousWindow.recent3AvgTemp) ? previousWindow.recent3AvgTemp : day.meanTemp;
+  const nightlyMin3 = Number.isFinite(previousWindow.recent3NightMin) ? previousWindow.recent3NightMin : day.minTemp;
   const vpd3 = Number.isFinite(previousWindow.recent3Vpd)
     ? previousWindow.recent3Vpd
     : Number.isFinite(day.vpdMean)
       ? day.vpdMean
       : 0;
-  const tempDrying = Math.max(
-    scale(meanTemp3, SCORING_CONFIG.dryingMultipliers.tempMidC, SCORING_CONFIG.dryingMultipliers.tempHighC),
-    scale(meanTemp3, SCORING_CONFIG.dryingMultipliers.tempHighC, SCORING_CONFIG.dryingMultipliers.tempHighC + 5),
-  );
-  const vpdDrying = Math.max(
-    scale(vpd3, SCORING_CONFIG.dryingMultipliers.vpdMid, SCORING_CONFIG.dryingMultipliers.vpdHigh),
-    scale(vpd3, SCORING_CONFIG.dryingMultipliers.vpdHigh, SCORING_CONFIG.dryingMultipliers.vpdHigh + 0.5),
-  );
-  const dryingIndex = clamp(0.55 * vpdDrying + 0.45 * tempDrying, 0, 1);
-  const dryingReduction = SCORING_CONFIG.dryingMultipliers.tailReductionAtMaxDrying * dryingIndex;
-  const dryingAdjustedTail = tailBoost * (1 - dryingReduction);
 
-  const rainDaySuppression =
-    scale(
-      currentRain,
-      SCORING_CONFIG.saturationSuppression.startMm,
-      SCORING_CONFIG.saturationSuppression.fullMm,
-    ) * SCORING_CONFIG.saturationSuppression.maxPenalty;
-
-  let rainEventComponent = clamp(
-    (0.58 * laggedBoost + 0.42 * dryingAdjustedTail) * (preset.rainBoostMultiplier ?? 1) - rainDaySuppression,
-    0,
-    1,
-  );
-  // Explicit post-rain trigger bonus for classic flush windows after meaningful rain.
-  if (daysSincePeakRain >= 1 && daysSincePeakRain <= 3 && peakRainAmount >= thresholds.heavy) {
-    rainEventComponent = clamp(rainEventComponent + 0.08, 0, 1);
-  }
-
-  return {
-    rainEventClass,
-    rainEventComponent,
-    daysSincePeakRain,
-    daysSinceLastSignificantRain,
-    dryingAdjustedTail,
-    dryingIndex,
-    laggedBoost,
-    peakRainAmount,
-    rainDaySuppression,
-    tailBoost,
-  };
-}
-
-export function buildModelFeatures({ day, previousWindow, seasonScore, latitude }) {
-  const presetKey = chooseClimatePreset(latitude);
-  const preset = CLIMATE_PRESETS[presetKey] ?? CLIMATE_PRESETS.temperate;
-
-  const rainSignal = buildRainEventSignal({ day, previousWindow, preset });
-
-  const meanTemp3 = Number.isFinite(previousWindow.recent3AvgTemp) ? previousWindow.recent3AvgTemp : day.meanTemp;
-  const nightlyMin3 = Number.isFinite(previousWindow.recent3NightMin) ? previousWindow.recent3NightMin : day.minTemp;
   const degreeDaysBase5 = Array.isArray(previousWindow.tempHistory7d)
     ? previousWindow.tempHistory7d.reduce((sum, temp) => sum + Math.max(0, (Number.isFinite(temp) ? temp : 0) - 5), 0)
     : 0;
 
-  const tempWindow = SCORING_CONFIG.temperatureWindow;
-  const temperatureBase = centeredScale(meanTemp3, tempWindow.low, tempWindow.bestLow, tempWindow.bestHigh, tempWindow.high);
-  const degreeDaySupport = centeredScale(degreeDaysBase5, 0, 20, 95, 180);
-  const temperatureComponent = clamp(
-    (0.74 * temperatureBase + 0.26 * degreeDaySupport) * (preset.temperaturePenaltyMultiplier ?? 1),
-    0,
-    1,
-  );
+  const climatePresetKey = chooseClimatePreset(latitude);
+  const climatePreset = CLIMATE_PRESETS[climatePresetKey] ?? CLIMATE_PRESETS.temperate;
 
-  const vpd3 = Number.isFinite(previousWindow.recent3Vpd)
-    ? previousWindow.recent3Vpd
-    : Number.isFinite(day.vpdMean)
-      ? day.vpdMean
-      : 0;
-  const dryingPenaltyBase = clamp(
-    0.65 * scale(vpd3, SCORING_CONFIG.dryingMultipliers.vpdMid, SCORING_CONFIG.dryingMultipliers.vpdHigh + 0.35) +
-      0.35 * scale(meanTemp3, SCORING_CONFIG.dryingMultipliers.tempMidC, SCORING_CONFIG.dryingMultipliers.tempHighC + 4),
-    0,
-    1,
-  );
-  const dryingPenalty = clamp(dryingPenaltyBase * (preset.dryingPenaltyMultiplier ?? 1), 0, 1);
+  const month = monthFromDate(day.date);
+  const hemisphere = latitude >= 0 ? "northern" : "southern";
+  const monthlyPriors = SCORING_CONFIG.guildPriors[hemisphere][month];
 
-  const coldPenalty =
-    scale(SCORING_CONFIG.coldPenalty.startC - nightlyMin3, 0, SCORING_CONFIG.coldPenalty.startC - SCORING_CONFIG.coldPenalty.severeC) *
-    SCORING_CONFIG.coldPenalty.maxPenalty;
+  const guildScores = {};
+  Object.entries(SCORING_CONFIG.guildConfigs).forEach(([guildKey, guildConfig]) => {
+    const rainSignal = buildGuildRainSignal({
+      rainHistory21d,
+      currentRain,
+      meanTemp3,
+      vpd3,
+      guildConfig,
+      climatePreset,
+      thresholds: SCORING_CONFIG.globalConfig.rainThresholdsMm,
+    });
 
-  const seasonalComponent = clamp(seasonScore / 100, 0, 1);
-  const climateProxy = 1 - clamp(Math.abs(latitude) / 75, 0, 1);
+    const tempWindow = guildConfig.temperatureWindow;
+    const baseTemp = centeredScale(meanTemp3, tempWindow.low, tempWindow.bestLow, tempWindow.bestHigh, tempWindow.high);
+    const degreeSupport = centeredScale(degreeDaysBase5, 0, 22, 105, 180);
+    const temperatureComponent = clamp(0.78 * baseTemp + 0.22 * degreeSupport, 0, 1);
+
+    const dryingPenalty = clamp(
+      0.62 * scale(vpd3, guildConfig.drying.vpdMid, guildConfig.drying.vpdHigh + 0.35) +
+        0.38 * scale(meanTemp3, guildConfig.drying.tempMidC, guildConfig.drying.tempHighC + 4),
+      0,
+      1,
+    );
+
+    const coldPenalty =
+      scale(guildConfig.frost.startC - nightlyMin3, 0, guildConfig.frost.startC - guildConfig.frost.severeC) * guildConfig.frost.maxPenalty;
+
+    const guildScore = clamp(
+      guildConfig.weights.rain * rainSignal.rainEventComponent +
+        guildConfig.weights.temp * temperatureComponent -
+        guildConfig.weights.drying * dryingPenalty -
+        guildConfig.weights.frost * coldPenalty,
+      0,
+      1,
+    );
+
+    guildScores[guildKey] = {
+      ...rainSignal,
+      temperatureComponent,
+      dryingPenalty,
+      coldPenalty,
+      guildScore,
+    };
+  });
+
+  const evidenceNudgeRaw = {
+    summer_warm_humid:
+      (monthlyPriors.summer_warm_humid ?? 0) *
+      (1 + 0.34 * scale(meanTemp3, 16, 24) * scale(guildScores.summer_warm_humid.rainEventComponent, 0.35, 1)),
+    fall_cool_moist:
+      (monthlyPriors.fall_cool_moist ?? 0) *
+      (1 + 0.26 * scale(meanTemp3, 8, 16) * scale(guildScores.fall_cool_moist.rainEventComponent, 0.3, 1)),
+    winter_frost_tolerant:
+      (monthlyPriors.winter_frost_tolerant ?? 0) * (1 + 0.44 * scale(2 - nightlyMin3, 0, 10)),
+  };
+
+  if (nightlyMin3 < 0) {
+    evidenceNudgeRaw.fall_cool_moist *= 0.74;
+    evidenceNudgeRaw.summer_warm_humid *= 0.78;
+  }
+
+  Object.keys(evidenceNudgeRaw).forEach((guildKey) => {
+    evidenceNudgeRaw[guildKey] *= climatePreset.guildPriorMultipliers[guildKey] ?? 1;
+  });
+
+  const guildWeights = normalizeWeights(evidenceNudgeRaw);
+  const blended = blendGuildScores({ guildScores, guildWeights, monthlyPriors });
+
+  const dominantGuild = Object.entries(guildWeights).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "summer_warm_humid";
 
   return {
-    rainEventClass: rainSignal.rainEventClass,
-    rainEventComponent: rainSignal.rainEventComponent,
-    laggedFruitingBoost: rainSignal.laggedBoost,
-    moistureTailBoost: rainSignal.tailBoost,
-    rainDaySuppression: rainSignal.rainDaySuppression,
-    dryingAdjustedTail: rainSignal.dryingAdjustedTail,
-    temperatureComponent,
-    dryingPenalty,
-    coldPenalty,
-    seasonalComponent,
-    climateProxy,
+    rainEventClass: guildScores[dominantGuild].rainEventClass,
+    rainEventComponent: blended.rainEventComponent,
+    laggedFruitingBoost: guildScores[dominantGuild].laggedBoost,
+    moistureTailBoost: guildScores[dominantGuild].tailBoost,
+    rainDaySuppression: 0,
+    dryingAdjustedTail: guildScores[dominantGuild].dryingAdjustedTail,
+    temperatureComponent: blended.temperatureComponent,
+    dryingPenalty: blended.dryingPenalty,
+    coldPenalty: blended.coldPenalty,
+    seasonalComponent: blended.seasonalComponent,
+    climateProxy: 1 - clamp(Math.abs(latitude) / 75, 0, 1),
     diagnostics: {
-      climatePreset: presetKey,
-      currentRain: Number.isFinite(day.precipitation) ? Math.max(0, day.precipitation) : 0,
-      daysSinceLastSignificantRain: rainSignal.daysSinceLastSignificantRain,
-      daysSincePeakRain: rainSignal.daysSincePeakRain,
+      climatePreset: climatePresetKey,
+      currentRain,
+      daysSinceLastSignificantRain: rainHistory21d.findIndex((rain) => rain >= SCORING_CONFIG.globalConfig.rainThresholdsMm.significant),
+      daysSincePeakRain: guildScores[dominantGuild].daysSincePeakRain,
       degreeDaysBase5,
-      dryingAdjustedTail: rainSignal.dryingAdjustedTail,
-      dryingIndex: rainSignal.dryingIndex,
-      dryingPenalty,
-      laggedBoost: rainSignal.laggedBoost,
+      dryingAdjustedTail: guildScores[dominantGuild].dryingAdjustedTail,
+      dryingIndex: guildScores[dominantGuild].dryingIndex,
+      dryingPenalty: blended.dryingPenalty,
+      guildScores,
+      guildWeights,
+      dominantGuild,
+      laggedBoost: guildScores[dominantGuild].laggedBoost,
       meanTemp3,
       nightlyMin3,
-      peakRainAmount: rainSignal.peakRainAmount,
-      rainDaySuppression: rainSignal.rainDaySuppression,
-      rainEventClass: rainSignal.rainEventClass,
-      rainEventComponent: rainSignal.rainEventComponent,
-      tailBoost: rainSignal.tailBoost,
-      temperatureComponent,
+      peakRainAmount: guildScores[dominantGuild].peakRainAmount,
+      rainEventClass: guildScores[dominantGuild].rainEventClass,
+      rainEventComponent: blended.rainEventComponent,
+      tailBoost: guildScores[dominantGuild].tailBoost,
+      temperatureComponent: blended.temperatureComponent,
       vpd3,
+      monthlyPriors,
+      seasonScore,
     },
   };
 }
 
 export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStats }) {
-  const weights = SCORING_CONFIG.componentWeights;
-  const rainEventSupport = clamp((featureVector.rainEventComponent ?? 0) * weights.rainEvent, 0, 1);
-  const temperatureSupport = clamp((featureVector.temperatureComponent ?? 0) * weights.temperature, 0, 1);
-  const dryingPenaltyWeighted = clamp((featureVector.dryingPenalty ?? 0) * weights.drying, 0, 1);
-  const coldPenaltyWeighted = clamp((featureVector.coldPenalty ?? 0) * weights.cold, 0, 1);
-  const seasonalSupport = clamp((featureVector.seasonalComponent ?? 0) * weights.seasonal, 0, 1);
-
-  const rawComponentScore = clamp(
-    rainEventSupport + temperatureSupport + seasonalSupport - dryingPenaltyWeighted - coldPenaltyWeighted,
+  const rawEcologicalScore = clamp(
+    0.52 * (featureVector.rainEventComponent ?? 0) +
+      0.31 * (featureVector.temperatureComponent ?? 0) +
+      0.04 * (featureVector.seasonalComponent ?? 0) -
+      0.07 * (featureVector.dryingPenalty ?? 0) -
+      0.06 * (featureVector.coldPenalty ?? 0),
     0,
     1,
   );
 
-  const horizonPenalty = clamp(daysAhead / 10, 0, 0.13);
+  const horizonPenalty = clamp(daysAhead / 10, 0, SCORING_CONFIG.globalConfig.horizonPenaltyMax);
   const sparseRegional = !regionalStats || (regionalStats.totalObservations ?? 0) < 20;
-  const regionalPenalty = sparseRegional ? 0.015 : 0;
+  const regionalPenalty = sparseRegional ? SCORING_CONFIG.globalConfig.sparseRegionalPenalty : 0;
 
   const warmRainSynergy = clamp(
-    0.14 *
-      scale(featureVector.temperatureComponent ?? 0, 0.72, 1) *
-      scale(featureVector.rainEventComponent ?? 0, 0.42, 1),
+    0.12 * scale(featureVector.temperatureComponent ?? 0, 0.7, 1) * scale(featureVector.rainEventComponent ?? 0, 0.42, 1),
     0,
-    0.14,
+    0.12,
   );
 
-  const bounded = SCORING_CONFIG.scoreBounds;
-  const adjustedProbability = clamp(
-    (rawComponentScore + warmRainSynergy) * (1 - horizonPenalty) - regionalPenalty,
-    bounded.min,
-    bounded.max,
-  );
+  const bounds = SCORING_CONFIG.globalConfig.scoreBounds;
+  const adjustedProbability = clamp((rawEcologicalScore + warmRainSynergy) * (1 - horizonPenalty) - regionalPenalty, bounds.min, bounds.max);
 
   const calibrationRisk = adjustedProbability > 0.9 || adjustedProbability < 0.1;
   let confidence = "High confidence";
@@ -351,21 +413,24 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
   else if (calibrationRisk) confidence = "Moderate confidence";
 
   const componentBreakdown = {
-    coldPenalty: coldPenaltyWeighted,
-    dryingPenalty: dryingPenaltyWeighted,
+    rainEventComponent: featureVector.rainEventComponent ?? 0,
+    temperatureComponent: featureVector.temperatureComponent ?? 0,
+    dryingPenalty: featureVector.dryingPenalty ?? 0,
+    coldPenalty: featureVector.coldPenalty ?? 0,
+    seasonalComponent: featureVector.seasonalComponent ?? 0,
+    warmRainSynergy,
     finalScore: adjustedProbability,
-    rainEventComponent: rainEventSupport,
-    seasonalComponent: seasonalSupport,
-    temperatureComponent: temperatureSupport,
   };
 
-  const topFactors = [
-    { key: "rainEventComponent", impact: rainEventSupport },
-    { key: "temperatureComponent", impact: temperatureSupport },
-    { key: "seasonalComponent", impact: seasonalSupport },
-    { key: "dryingPenalty", impact: -dryingPenaltyWeighted },
-    { key: "coldPenalty", impact: -coldPenaltyWeighted },
-  ]
+  const signedFactors = [
+    { key: "rainEventComponent", impact: 0.52 * (featureVector.rainEventComponent ?? 0) },
+    { key: "temperatureComponent", impact: 0.31 * (featureVector.temperatureComponent ?? 0) },
+    { key: "seasonalComponent", impact: 0.04 * (featureVector.seasonalComponent ?? 0) },
+    { key: "dryingPenalty", impact: -0.07 * (featureVector.dryingPenalty ?? 0) },
+    { key: "coldPenalty", impact: -0.06 * (featureVector.coldPenalty ?? 0) },
+  ];
+
+  const topFactors = signedFactors
     .sort((left, right) => Math.abs(right.impact) - Math.abs(left.impact))
     .map((factor, index) => ({
       rank: index + 1,
@@ -386,8 +451,7 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
       componentBreakdown,
       daysAhead,
       horizonPenalty,
-      warmRainSynergy,
-      rawComponentScore,
+      rawEcologicalScore,
       sparseRegional,
     },
   };
