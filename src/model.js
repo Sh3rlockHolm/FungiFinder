@@ -101,9 +101,10 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
   const topSoilHistoryMean = average(topSoilHistory);
   const rain1dAgo = rainHistory21d[1] ?? 0;
   const rain2dAgo = rainHistory21d[2] ?? 0;
-  const quickRecharge = scale(currentRain * 0.6 + rain1dAgo * 0.85 + rain2dAgo * 0.45, 0, 26);
+  const immediateRainPulse = scale(currentRain * 1.25 + rain1dAgo * 0.9 + rain2dAgo * 0.35, 0, 30);
   const soilStorageBase = centeredScale(0.7 * topSoilRecent + 0.3 * topSoilHistoryMean, 0.08, 0.18, 0.36, 0.56);
-  const moistureStorage = clamp(soilStorageBase + 0.28 * quickRecharge, 0, 1);
+  const pulseFloor = immediateRainPulse * 0.82;
+  const moistureStorage = clamp(Math.max(soilStorageBase, pulseFloor), 0, 1);
 
   const vpd3 = Number.isFinite(previousWindow.recent3Vpd) ? previousWindow.recent3Vpd : Number.isFinite(day.vpdMean) ? day.vpdMean : 0;
   const meanTemp3 = Number.isFinite(previousWindow.recent3AvgTemp) ? previousWindow.recent3AvgTemp : day.meanTemp;
