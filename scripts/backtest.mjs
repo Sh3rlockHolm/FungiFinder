@@ -6,8 +6,26 @@ const LOCATIONS = [
   { label: "Munich, DE", latitude: 48.1351, longitude: 11.582 },
 ];
 
-const WINDOW_DAYS = 60;
-const STEP_DAYS = 10;
+const BACKTEST_MODE = process.env.BACKTEST_MODE === "quick" ? "quick" : "full";
+const BACKTEST_CONFIG = BACKTEST_MODE === "quick"
+  ? {
+      locations: LOCATIONS.slice(0, 1),
+      windowDays: 28,
+      stepDays: 4,
+      maxRowsPerLocation: 12,
+      inatDayStride: 2,
+      inatPauseMs: 350,
+      inatRetryCount: 4,
+    }
+  : {
+      locations: LOCATIONS,
+      windowDays: 60,
+      stepDays: 10,
+      maxRowsPerLocation: Infinity,
+      inatDayStride: 1,
+      inatPauseMs: 0,
+      inatRetryCount: 4,
+    };
 
 function iso(date) {
   return date.toISOString().slice(0, 10);
@@ -89,6 +107,14 @@ function ece(rows, bins = 10) {
   return error;
 }
 
+function median(values) {
+  const valid = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!valid.length) return 0;
+  const middle = Math.floor(valid.length / 2);
+  if (valid.length % 2 === 1) return valid[middle];
+  return (valid[middle - 1] + valid[middle]) / 2;
+}
+
 async function fetchWeatherWindow(latitude, longitude, startDate, endDate) {
   const params = new URLSearchParams({
     latitude: latitude.toFixed(5),
@@ -122,17 +148,29 @@ async function fetchINatCount(latitude, longitude, d1, d2, extraParams = {}) {
     d2,
     ...extraParams,
   });
-  const response = await fetch(`https://api.inaturalist.org/v1/observations?${params}`);
-  if (!response.ok) throw new Error(`iNaturalist failed ${response.status}`);
-  const payload = await response.json();
-  return payload.total_results ?? 0;
+  for (let attempt = 0; attempt < BACKTEST_CONFIG.inatRetryCount; attempt += 1) {
+    const response = await fetch(`https://api.inaturalist.org/v1/observations?${params}`);
+    if (response.ok) {
+      const payload = await response.json();
+      if (BACKTEST_CONFIG.inatPauseMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, BACKTEST_CONFIG.inatPauseMs));
+      }
+      return payload.total_results ?? 0;
+    }
+    if (response.status !== 429 || attempt === BACKTEST_CONFIG.inatRetryCount - 1) {
+      throw new Error(`iNaturalist failed ${response.status}`);
+    }
+    const backoffMs = 500 * 2 ** attempt;
+    await new Promise((resolve) => setTimeout(resolve, backoffMs));
+  }
+  return 0;
 }
 
 async function buildRowsForLocation(location) {
   const end = new Date();
   end.setUTCDate(end.getUTCDate() - 4);
   const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - WINDOW_DAYS);
+  start.setUTCDate(start.getUTCDate() - BACKTEST_CONFIG.windowDays);
   const weatherPayload = await fetchWeatherWindow(location.latitude, location.longitude, iso(start), iso(end));
   const hourlyByDate = new Map();
   const hourlyTime = weatherPayload.hourly?.time ?? [];
@@ -162,10 +200,14 @@ async function buildRowsForLocation(location) {
   }));
 
   const rows = [];
-  for (let index = 6; index < days.length - 4; index += 1) {
+  for (let index = 6; index < days.length - 4; index += BACKTEST_CONFIG.inatDayStride) {
+    if (rows.length >= BACKTEST_CONFIG.maxRowsPerLocation) break;
     const day = days[index];
     const recent3 = days.slice(index - 2, index + 1);
     const previous3 = days.slice(index - 5, index - 2);
+    const rainHistory21d = Array.from({ length: 21 }, (_, lag) => Math.max(0, days[index - lag]?.precipitation ?? 0));
+    const soilHistory7d = Array.from({ length: 7 }, (_, lag) => days[index - lag]?.soilMoistureTop ?? null).filter(Number.isFinite);
+    const tempHistory7d = Array.from({ length: 7 }, (_, lag) => days[index - lag]?.meanTemp ?? null).filter(Number.isFinite);
     const rain1dAgo = days[index - 1]?.precipitation ?? 0;
     const rain2dAgo = days[index - 2]?.precipitation ?? 0;
     const rain3dAgo = days[index - 3]?.precipitation ?? 0;
@@ -176,15 +218,32 @@ async function buildRowsForLocation(location) {
     const d1Recent7 = shift(day.date, -6);
     const d1Recent14 = shift(day.date, -13);
 
-    const [future3dCount, baseline30Count, recent7Observations, recent14Observations, researchRecent14Observations, seasonalObservations] =
-      await Promise.all([
+    let future3dCount;
+    let baseline30Count;
+    let recent7Observations;
+    let recent14Observations;
+    let researchRecent14Observations;
+    let seasonalObservations;
+    if (BACKTEST_MODE === "quick") {
+      [future3dCount, baseline30Count] = await Promise.all([
         fetchINatCount(location.latitude, location.longitude, d1Future, d2Future),
         fetchINatCount(location.latitude, location.longitude, d1Past30, d2Past1),
-        fetchINatCount(location.latitude, location.longitude, d1Recent7, day.date),
-        fetchINatCount(location.latitude, location.longitude, d1Recent14, day.date),
-        fetchINatCount(location.latitude, location.longitude, d1Recent14, day.date, { quality_grade: "research" }),
-        fetchINatCount(location.latitude, location.longitude, shift(day.date, -30), day.date),
       ]);
+      recent7Observations = Math.round((baseline30Count / 30) * 7);
+      recent14Observations = Math.round((baseline30Count / 30) * 14);
+      researchRecent14Observations = Math.round(recent14Observations * 0.55);
+      seasonalObservations = baseline30Count;
+    } else {
+      [future3dCount, baseline30Count, recent7Observations, recent14Observations, researchRecent14Observations, seasonalObservations] =
+        await Promise.all([
+          fetchINatCount(location.latitude, location.longitude, d1Future, d2Future),
+          fetchINatCount(location.latitude, location.longitude, d1Past30, d2Past1),
+          fetchINatCount(location.latitude, location.longitude, d1Recent7, day.date),
+          fetchINatCount(location.latitude, location.longitude, d1Recent14, day.date),
+          fetchINatCount(location.latitude, location.longitude, d1Recent14, day.date, { quality_grade: "research" }),
+          fetchINatCount(location.latitude, location.longitude, shift(day.date, -30), day.date),
+        ]);
+    }
 
     const baselinePer3d = Math.max(0.5, (baseline30Count / 30) * 3);
     const label = future3dCount > baselinePer3d * 1.2 ? 1 : 0;
@@ -199,6 +258,9 @@ async function buildRowsForLocation(location) {
         rain1dAgo,
         rain2dAgo,
         rain3dAgo,
+        rainHistory21d,
+        soilHistory7d,
+        tempHistory7d,
         recent3TopSoilMoisture: mean(recent3.map((entry) => entry.soilMoistureTop)),
         recent3Vpd: mean(recent3.map((entry) => entry.vpdMean)),
       },
@@ -209,7 +271,6 @@ async function buildRowsForLocation(location) {
         seasonalObservations,
         totalObservations: Math.max(recent14Observations, baseline30Count),
       },
-      habitatScore: 88,
       seasonScore: 55,
       latitude: location.latitude,
     });
@@ -225,6 +286,11 @@ async function buildRowsForLocation(location) {
       label,
       location: location.label,
       probability: inference.probability,
+      rainToday: day.precipitation,
+      recent3Rain: sum(recent3.map((entry) => entry.precipitation)),
+      moistureSupply: featureBundle.moistureSupply,
+      moistureStorage: featureBundle.moistureStorage,
+      dryingForce: featureBundle.dryingForce,
     });
   }
   return rows;
@@ -233,21 +299,23 @@ async function buildRowsForLocation(location) {
 function rollingTimeSplits(rows) {
   const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
   const splits = [];
-  for (let start = 0; start + STEP_DAYS * 2 < sorted.length; start += STEP_DAYS) {
-    const trainEnd = start + STEP_DAYS;
-    const testEnd = Math.min(sorted.length, trainEnd + STEP_DAYS);
+  for (let start = 0; start + BACKTEST_CONFIG.stepDays * 2 < sorted.length; start += BACKTEST_CONFIG.stepDays) {
+    const trainEnd = start + BACKTEST_CONFIG.stepDays;
+    const testEnd = Math.min(sorted.length, trainEnd + BACKTEST_CONFIG.stepDays);
     splits.push({
       train: sorted.slice(0, trainEnd),
       test: sorted.slice(trainEnd, testEnd),
     });
   }
-  return splits.filter((split) => split.test.length >= 5);
+  const minTestRows = BACKTEST_MODE === "quick" ? 3 : 5;
+  return splits.filter((split) => split.test.length >= minTestRows);
 }
 
 async function main() {
   console.log(`Model: ${MODEL_METADATA.modelVersion} (${MODEL_METADATA.modelType}, ${MODEL_METADATA.calibrationMethod})`);
+  console.log(`Backtest mode: ${BACKTEST_MODE}`);
   const allRows = [];
-  for (const location of LOCATIONS) {
+  for (const location of BACKTEST_CONFIG.locations) {
     console.log(`Collecting ${location.label}...`);
     const rows = await buildRowsForLocation(location);
     allRows.push(...rows);
@@ -268,8 +336,33 @@ async function main() {
     brier: mean(metrics.map((m) => m.brier)),
     ece: mean(metrics.map((m) => m.ece)),
   };
+
+  const sortedRows = [...allRows].sort((a, b) => `${a.location}-${a.date}`.localeCompare(`${b.location}-${b.date}`));
+  const dayToDayDeltas = [];
+  const postRainDecayDeltas = [];
+  for (let index = 1; index < sortedRows.length; index += 1) {
+    const previous = sortedRows[index - 1];
+    const current = sortedRows[index];
+    if (previous.location !== current.location) continue;
+    const delta = Math.abs(current.probability - previous.probability);
+    dayToDayDeltas.push(delta);
+    const stormYesterday = (previous.rainToday ?? 0) >= 12;
+    const dryToday = (current.rainToday ?? 0) <= 1;
+    if (stormYesterday && dryToday) postRainDecayDeltas.push(previous.probability - current.probability);
+  }
+
+  const transitionDiagnostics = {
+    medianDayToDayDelta: median(dayToDayDeltas),
+    p90DayToDayDelta: dayToDayDeltas.length
+      ? [...dayToDayDeltas].sort((a, b) => a - b)[Math.floor(dayToDayDeltas.length * 0.9)]
+      : 0,
+    medianPostStormOneDayDrop: median(postRainDecayDeltas),
+  };
+
   console.log("Backtest summary:");
   console.table(summary);
+  console.log("Transition diagnostics:");
+  console.table(transitionDiagnostics);
 }
 
 main().catch((error) => {

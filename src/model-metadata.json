@@ -1,12 +1,12 @@
 {
-  "modelVersion": "v3.1.0",
-  "modelType": "regularized_logistic",
+  "modelVersion": "v4.0.0",
+  "modelType": "physics_shaped_logistic",
   "calibrationMethod": "platt",
   "trainedWindow": {
     "from": "2024-01-01",
-    "to": "2026-04-30"
+    "to": "2026-05-20"
   },
-  "featureSchemaHash": "ff-v3_1-weather-first-observer-neutral-20260519",
-  "targetDefinition": "P(activity_spike_next_1_3_days)",
+  "featureSchemaHash": "ff-v4_0-moisture-memory-thermal-readiness-20260520",
+  "targetDefinition": "P(detectable_fruiting_presence_local_window_2_3d)",
   "radiusKm": 50
 }

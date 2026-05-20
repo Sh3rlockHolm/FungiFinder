@@ -1,47 +1,37 @@
 export const MODEL_METADATA = {
-  modelVersion: "v3.1.0",
-  modelType: "regularized_logistic",
+  modelVersion: "v4.0.0",
+  modelType: "physics_shaped_logistic",
   calibrationMethod: "platt",
   trainedWindow: {
     from: "2024-01-01",
-    to: "2026-04-30",
+    to: "2026-05-20",
   },
-  featureSchemaHash: "ff-v3_1-weather-first-observer-neutral-20260519",
-  targetDefinition: "P(activity_spike_next_1_3_days)",
+  featureSchemaHash: "ff-v4_0-moisture-memory-thermal-readiness-20260520",
+  targetDefinition: "P(detectable_fruiting_presence_local_window_2_3d)",
   radiusKm: 50,
 };
 
 const COEFFICIENTS = {
-  intercept: -0.59,
-  rainLagWeighted: 1.02,
-  rainPrior24To72: 0.67,
-  drySpellPenalty: -0.88,
-  soilMoistureTop: 0.93,
-  vpdStress: -0.82,
-  rainCurrentPenalty: -0.47,
-  warmingAfterRain: 0.61,
-  tempWindow: 0.54,
-  frostPenalty: -0.56,
-  volatilityPenalty: -0.24,
-  habitat: 0.31,
-  seasonWeak: 0.14,
-  climateProxy: 0.08,
+  intercept: -1.02,
+  moistureSupply: 1.38,
+  moistureStorage: 1.04,
+  dryingForce: -1.12,
+  thermalReadiness: 0.86,
+  coldShock: -0.74,
+  saturationStress: -0.22,
+  seasonWeak: 0.16,
+  climateProxy: 0.09,
 };
 
-const PLATT = { a: 1.18, b: -0.09 };
+const PLATT = { a: 1.11, b: -0.04 };
 
 const FACTOR_LABELS = {
-  rainLagWeighted: "Lagged rain effect (1/2/3-day)",
-  rainPrior24To72: "Rain 24-72h ago",
-  drySpellPenalty: "Dry spell penalty (insufficient recent rain)",
-  soilMoistureTop: "Topsoil moisture",
-  vpdStress: "Drying-air stress (VPD)",
-  rainCurrentPenalty: "Current rain penalty",
-  warmingAfterRain: "Warming after rain",
-  tempWindow: "Temperature window",
-  frostPenalty: "Frost / cold-night risk",
-  volatilityPenalty: "Temperature volatility",
-  habitat: "Habitat baseline",
+  moistureSupply: "Antecedent moisture supply",
+  moistureStorage: "Moisture storage (topsoil)",
+  dryingForce: "Drying force (VPD + warmth)",
+  thermalReadiness: "Thermal readiness",
+  coldShock: "Cold-shock / frost risk",
+  saturationStress: "Saturation stress",
   seasonWeak: "Seasonal prior (weak)",
   climateProxy: "Regional climate proxy",
 };
@@ -68,45 +58,88 @@ function centeredScale(value, low, bestLow, bestHigh, high) {
   return (high - value) / Math.max(high - bestHigh, 1e-9);
 }
 
-export function buildModelFeatures({ day, previousWindow, regionalStats, habitatScore, seasonScore, latitude }) {
-  const currentRain = day.precipitation;
-  const rain72h = previousWindow.recent3Rain;
-  const priorRain24To72 = Math.max(0, rain72h - currentRain);
-  const rainLagWeighted = (previousWindow.rain1dAgo ?? 0) * 0.2 + (previousWindow.rain2dAgo ?? 0) * 0.5 + (previousWindow.rain3dAgo ?? 0) * 0.3;
-  const warmingAfterRain = day.meanTemp - previousWindow.previous3AvgTemp;
-  const avgTemp3 = previousWindow.recent3AvgTemp;
-  const nightlyMin3 = previousWindow.recent3NightMin;
-  const volatility3 = previousWindow.recent3DiurnalRange;
-  const topSoilMoisture = previousWindow.recent3TopSoilMoisture ?? day.soilMoistureTop ?? 0;
-  const vpd3 = previousWindow.recent3Vpd ?? day.vpdMean ?? 0;
+function computeApiRain(rainHistory, halfLifeDays = 5) {
+  const lambda = Math.log(2) / Math.max(1, halfLifeDays);
+  return rainHistory.reduce((total, rain, dayIndex) => {
+    if (!Number.isFinite(rain) || rain <= 0) return total;
+    const weight = Math.exp(-lambda * dayIndex);
+    return total + rain * weight;
+  }, 0);
+}
+
+function average(array) {
+  const valid = array.filter(Number.isFinite);
+  if (!valid.length) return 0;
+  return valid.reduce((sum, value) => sum + value, 0) / valid.length;
+}
+
+export function buildModelFeatures({ day, previousWindow, seasonScore, latitude }) {
+  const currentRain = Number.isFinite(day.precipitation) ? Math.max(0, day.precipitation) : 0;
+  const rainHistory21d = Array.isArray(previousWindow.rainHistory21d)
+    ? previousWindow.rainHistory21d.map((value) => (Number.isFinite(value) ? Math.max(0, value) : 0))
+    : [];
+
+  const rainHistoryNoCurrent = rainHistory21d.slice(1);
+  const api7 = computeApiRain(rainHistoryNoCurrent.slice(0, 7), 3.2);
+  const api14 = computeApiRain(rainHistoryNoCurrent.slice(0, 14), 5.0);
+  const api21 = computeApiRain(rainHistoryNoCurrent.slice(0, 21), 7.0);
+  const antecedentRainTotal = rainHistoryNoCurrent.reduce((sum, value) => sum + value, 0);
+
+  const moistureSupply = centeredScale(0.45 * api7 + 0.38 * api14 + 0.17 * api21, 0, 3.5, 17, 48);
+
+  const topSoilRecent = Number.isFinite(previousWindow.recent3TopSoilMoisture)
+    ? previousWindow.recent3TopSoilMoisture
+    : Number.isFinite(day.soilMoistureTop)
+      ? day.soilMoistureTop
+      : 0;
+  const topSoilHistory = Array.isArray(previousWindow.soilHistory7d) ? previousWindow.soilHistory7d : [];
+  const topSoilHistoryMean = average(topSoilHistory);
+  const moistureStorage = centeredScale(0.7 * topSoilRecent + 0.3 * topSoilHistoryMean, 0.08, 0.18, 0.36, 0.56);
+
+  const vpd3 = Number.isFinite(previousWindow.recent3Vpd) ? previousWindow.recent3Vpd : Number.isFinite(day.vpdMean) ? day.vpdMean : 0;
+  const meanTemp3 = Number.isFinite(previousWindow.recent3AvgTemp) ? previousWindow.recent3AvgTemp : day.meanTemp;
+  const dryingForce = clamp(0.72 * scale(Math.max(0, vpd3 - 0.9), 0, 1.8) + 0.28 * scale(Math.max(0, meanTemp3 - 16), 0, 14), 0, 1);
+
+  const degreeDaysBase5 = Array.isArray(previousWindow.tempHistory7d)
+    ? previousWindow.tempHistory7d.reduce((sum, temp) => sum + Math.max(0, (Number.isFinite(temp) ? temp : 0) - 5), 0)
+    : 0;
+  const thermalReadiness = clamp(
+    0.65 * centeredScale(meanTemp3, 0, 8, 19, 30) + 0.35 * centeredScale(degreeDaysBase5, 0, 22, 90, 170),
+    0,
+    1,
+  );
+
+  const nightlyMin3 = Number.isFinite(previousWindow.recent3NightMin) ? previousWindow.recent3NightMin : day.minTemp;
+  const coldShock = scale(Math.max(0, 1.5 - nightlyMin3), 0, 8);
+
+  const saturationStress = scale(Math.max(0, currentRain - 12), 0, 28);
 
   const climateProxy = 1 - clamp(Math.abs(latitude) / 75, 0, 1);
 
   return {
-    rainLagWeighted: centeredScale(rainLagWeighted, 0, 2.5, 12, 35),
-    rainPrior24To72: centeredScale(priorRain24To72, 0, 4, 20, 45),
-    drySpellPenalty: scale(Math.max(0, 4 - priorRain24To72), 0, 4),
-    soilMoistureTop: centeredScale(topSoilMoisture, 0.08, 0.18, 0.38, 0.55),
-    vpdStress: scale(Math.max(0, vpd3 - 1.1), 0, 1.7),
-    rainCurrentPenalty: scale(currentRain, 0, 16),
-    warmingAfterRain: centeredScale(warmingAfterRain, -4, 1, 5, 10),
-    tempWindow: centeredScale(avgTemp3, 0, 8, 18, 30),
-    frostPenalty: scale(Math.max(0, 2 - nightlyMin3), 0, 6),
-    volatilityPenalty: scale(Math.abs(volatility3 - 9), 0, 10),
-    habitat: clamp(habitatScore / 100, 0, 1),
+    moistureSupply,
+    moistureStorage,
+    dryingForce,
+    thermalReadiness,
+    coldShock,
+    saturationStress,
     seasonWeak: clamp(seasonScore / 100, 0, 1),
     climateProxy: clamp(climateProxy, 0, 1),
     diagnostics: {
-      avgTemp3,
+      antecedentRainTotal,
+      api7,
+      api14,
+      api21,
       currentRain,
-      rainLagWeighted,
+      degreeDaysBase5,
+      dryingForce,
+      meanTemp3,
+      moistureStorage,
+      moistureSupply,
       nightlyMin3,
-      priorRain24To72,
-      rain72h,
-      topSoilMoisture,
-      volatility3,
+      saturationStress,
+      topSoilRecent,
       vpd3,
-      warmingAfterRain,
     },
   };
 }
@@ -132,15 +165,20 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
   const rawProbability = sigmoid(linear);
   const logit = Math.log(rawProbability / Math.max(1e-9, 1 - rawProbability));
   const calibratedProbability = clamp(sigmoid(PLATT.a * logit + PLATT.b), 0.01, 0.99);
-  const horizonPenalty = clamp(daysAhead / 9, 0, 0.15);
+  const horizonPenalty = clamp(daysAhead / 9, 0, 0.16);
   let adjustedProbability = clamp(calibratedProbability * (1 - horizonPenalty), 0.01, 0.99);
 
-  // Physical guardrail: warm temperatures alone should not dominate during very dry conditions.
-  const dryState = (featureVector.drySpellPenalty ?? 0) >= 0.9;
-  const highDryingStress = (featureVector.vpdStress ?? 0) >= 0.75;
-  const weakSoilMoisture = (featureVector.soilMoistureTop ?? 0) <= 0.25;
-  if (dryState && (highDryingStress || weakSoilMoisture)) {
-    adjustedProbability = Math.min(adjustedProbability, 0.58);
+  const highMoistureMemory = (featureVector.moistureSupply ?? 0) >= 0.72;
+  const strongStorage = (featureVector.moistureStorage ?? 0) >= 0.58;
+  const heavySameDayRain = (featureVector.saturationStress ?? 0) >= 0.4;
+  if (highMoistureMemory && strongStorage && heavySameDayRain) {
+    adjustedProbability = Math.max(adjustedProbability, 0.5);
+  }
+
+  const veryDry = (featureVector.moistureSupply ?? 0) <= 0.22 && (featureVector.moistureStorage ?? 0) <= 0.24;
+  const strongDrying = (featureVector.dryingForce ?? 0) >= 0.75;
+  if (veryDry && strongDrying) {
+    adjustedProbability = Math.min(adjustedProbability, 0.52);
   }
 
   const sparseRegional = !regionalStats || (regionalStats.totalObservations ?? 0) < 20;
@@ -159,7 +197,7 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
       label: factor.label,
       direction: factor.impact >= 0 ? "supports" : "reduces",
       impact: Math.round(Math.abs(factor.impact) * 100) / 100,
-      contributionPercent: Math.round(clamp(Math.abs(factor.impact) / 1.6, 0, 1) * 100),
+      contributionPercent: Math.round(clamp(Math.abs(factor.impact) / 1.8, 0, 1) * 100),
     }));
 
   return {
@@ -179,9 +217,9 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
 
 export function scoreToVerdict(probability) {
   const score = Math.round(clamp(probability, 0, 1) * 100);
-  if (score >= 78) return "Strong active fruiting signal";
-  if (score >= 62) return "Likely active fruiting";
-  if (score >= 46) return "Mixed current fruiting signal";
-  if (score >= 30) return "Weak current signal";
-  return "Low current fruiting signal";
+  if (score >= 80) return "Strong fruiting presence likely";
+  if (score >= 64) return "Fruiting presence likely";
+  if (score >= 47) return "Mixed fruiting presence signal";
+  if (score >= 32) return "Weak fruiting presence signal";
+  return "Low fruiting presence signal";
 }

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "backtest": "node ./scripts/backtest.mjs"
+    "backtest": "node ./scripts/backtest.mjs",
+    "backtest:quick": "set BACKTEST_MODE=quick&& node ./scripts/backtest.mjs"
   }
 }

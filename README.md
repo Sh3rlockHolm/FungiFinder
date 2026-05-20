@@ -16,7 +16,7 @@ the user-experience level before implementation.
 - Regional observations: iNaturalist observations API
 - Map: OpenStreetMap tiles through Leaflet
 - Inputs: daily precipitation sum, daily mean temperature, daily maximum
-  temperature, daily minimum temperature, selected forest type,
+  temperature, daily minimum temperature,
   nearby fungi observation counts
 - Window: 7 past days plus today and 7 forecast days
 - API keys: none required
@@ -25,11 +25,11 @@ Open-Meteo is a strong first source because it is easy to prototype with and can
 serve both web and future mobile clients. Later versions should consider a
 dedicated weather provider if higher-resolution rainfall history becomes critical.
 
-## Fruiting Signal Model v3.1
+## Fruiting Signal Model v4.0
 
 Each target day now produces a calibrated probability for:
 
-`P(activity spike in nearby observations in the next 1-3 days)`
+`P(detectable fruiting presence in local woods over a 2-3 day growth window)`
 
 Displayed app score is `0-100 = calibrated probability (%)`.
 
@@ -58,10 +58,11 @@ Model metadata is versioned in `src/model.js` and `src/model-metadata.json`:
 Highest influence:
 
 - moisture physics features:
-  - lag-weighted rainfall (1d/2d/3d with strongest day-2 signal)
-  - topsoil moisture (0-7 cm)
-  - VPD drying stress (derived from temp + humidity)
-- warming trend after moisture
+  - antecedent moisture memory (API-style 1-21 day rainfall decay)
+  - topsoil moisture storage (0-7 cm)
+  - drying force (VPD + warmth)
+  - thermal readiness (temperature window + short degree-day accumulation)
+  - cold-shock risk (night minima / frost)
 
 Lower influence:
 
@@ -73,6 +74,7 @@ The model intentionally does **not** treat "mushroom season" as a hard blocker.
 ### Implementation Notes
 
 - Interpretable regularized logistic model with Platt calibration.
+- Moisture-memory and storm-resilience guardrails reduce unrealistic day-to-day score collapse.
 - Regional pooling with location/climate covariates.
 - Confidence badge reflects data sparsity and forecast horizon uncertainty.
 - Dry-condition guardrail caps over-optimistic scores when moisture is insufficient.

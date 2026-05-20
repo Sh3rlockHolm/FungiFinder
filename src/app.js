@@ -4,7 +4,6 @@ const state = {
   allDays: [],
   animationFromIndex: null,
   focusDate: null,
-  forestType: "mixed",
   map: null,
   marker: null,
   regionalStats: null,
@@ -26,7 +25,6 @@ const elements = {
   analysisTitle: document.querySelector("#analysisTitle"),
   combinedChart: document.querySelector("#combinedChart"),
   confidenceBadge: document.querySelector("#confidenceBadge"),
-  contextCopy: document.querySelector("#contextCopy"),
   coordinateForm: document.querySelector("#coordinateForm"),
   dataStatus: document.querySelector("#dataStatus"),
   detailCopy: document.querySelector("#detailCopy"),
@@ -34,7 +32,6 @@ const elements = {
   detailMetrics: document.querySelector("#detailMetrics"),
   detailScore: document.querySelector("#detailScore"),
   detailVerdict: document.querySelector("#detailVerdict"),
-  forestTypeSelect: document.querySelector("#forestTypeSelect"),
   locationInput: document.querySelector("#locationInput"),
   locationSuggestions: document.querySelector("#locationSuggestions"),
   mobileTabs: document.querySelector("#mobileTabs"),
@@ -243,34 +240,25 @@ function seasonScoreForDate(dateString, latitude) {
   return 24;
 }
 
-function forestScore() {
-  const scores = {
-    mixed: 88,
-    deciduous: 84,
-    riparian: 92,
-    conifer: 80,
-  };
-  return scores[state.forestType] ?? 84;
-}
-
-function buildReasons({ rain72h, priorRain72h, currentRain, avgTemp, nightlyMin, warmTrendScore }) {
+function buildReasons({ moistureSupply, moistureStorage, dryingForce, currentRain, avgTemp, nightlyMin }) {
   const reasons = [];
-  if (priorRain72h >= 4 && priorRain72h <= 20) reasons.push("Rain 24-72h ago is in a favorable range.");
-  else if (priorRain72h < 3) reasons.push("Rainfall in the prior 24-72h window is limited.");
-  else reasons.push("Prior 24-72h rainfall is heavy and may saturate the ground.");
+  if (moistureSupply >= 0.65) reasons.push("Antecedent rain memory supports current fruiting momentum.");
+  else if (moistureSupply >= 0.38) reasons.push("Recent rain memory is moderate but still supportive.");
+  else reasons.push("Antecedent moisture memory is limited right now.");
 
-  if (currentRain >= 6) reasons.push("Ongoing heavy rain can suppress near-term fruiting visibility.");
-  else if (rain72h > 0) reasons.push("Recent moisture is present without strongly over-wetting today.");
+  if (moistureStorage >= 0.55) reasons.push("Topsoil moisture storage remains supportive.");
+  else if (moistureStorage <= 0.25) reasons.push("Topsoil moisture storage is currently low.");
 
   if (avgTemp >= 8 && avgTemp <= 18) reasons.push("Average temperature is in a good range.");
   else if (avgTemp < 5) reasons.push("Temperatures are likely too cold.");
-  else if (avgTemp >= 30) reasons.push("Very hot conditions (30 C+) usually suppress mushroom fruiting.");
+  else if (avgTemp >= 30) reasons.push("Very hot conditions usually suppress fruiting.");
   else reasons.push("Warmer-than-ideal conditions may shorten the fruiting window.");
+
+  if (dryingForce >= 0.7) reasons.push("Drying air and warmth are accelerating moisture loss.");
+  else if (currentRain >= 12) reasons.push("Heavy same-day rain may reduce short-term detectability, but does not erase prior growth.");
 
   if (nightlyMin < -1) reasons.push("Recent frost is a strong negative signal.");
   else if (nightlyMin < 4) reasons.push("Cold nights reduce confidence.");
-
-  if (priorRain72h >= 2 && warmTrendScore >= 65) reasons.push("A warming trend after rain supports current fruiting activity.");
 
   return reasons.slice(0, 3);
 }
@@ -751,6 +739,9 @@ function scoreDay(days, index, todayIndex) {
   const target = days[index];
   const threeDayWindow = windowSlice(days, index, 3);
   const previousThreeDayWindow = days.slice(Math.max(0, index - 5), Math.max(0, index - 2));
+  const rainHistory21d = Array.from({ length: 21 }, (_, lag) => Math.max(0, days[index - lag]?.precipitation ?? 0));
+  const soilHistory7d = Array.from({ length: 7 }, (_, lag) => days[index - lag]?.soilMoistureTop ?? null).filter(Number.isFinite);
+  const tempHistory7d = Array.from({ length: 7 }, (_, lag) => days[index - lag]?.meanTemp ?? null).filter(Number.isFinite);
   const day1Ago = days[index - 1] ?? null;
   const day2Ago = days[index - 2] ?? null;
   const day3Ago = days[index - 3] ?? null;
@@ -773,7 +764,6 @@ function scoreDay(days, index, todayIndex) {
 
   const season = getSeasonForDate(target.date, state.selected.latitude);
   const seasonScore = seasonScoreForDate(target.date, state.selected.latitude);
-  const habitatScore = forestScore();
   const previousWindow = {
     previous3AvgTemp: mean(previousThreeDayWindow.map((day) => day.meanTemp)),
     recent3AvgTemp: avgTemp,
@@ -783,6 +773,9 @@ function scoreDay(days, index, todayIndex) {
     rain1dAgo,
     rain2dAgo,
     rain3dAgo,
+    rainHistory21d,
+    soilHistory7d,
+    tempHistory7d,
     recent3TopSoilMoisture: mean(threeDayWindow.map((day) => day.soilMoistureTop)),
     recent3Vpd: mean(threeDayWindow.map((day) => day.vpdMean)),
   };
@@ -790,7 +783,6 @@ function scoreDay(days, index, todayIndex) {
     day: target,
     previousWindow,
     regionalStats: state.regionalStats,
-    habitatScore,
     seasonScore,
     latitude: state.selected.latitude,
   });
@@ -828,12 +820,12 @@ function scoreDay(days, index, todayIndex) {
     season,
     verdict: scoreToVerdict(modelInference.probability),
     reasons: buildReasons({
-      rain72h,
-      priorRain72h: featureBundle.diagnostics.priorRain24To72,
+      moistureSupply: featureBundle.moistureSupply,
+      moistureStorage: featureBundle.moistureStorage,
+      dryingForce: featureBundle.dryingForce,
       currentRain: featureBundle.diagnostics.currentRain,
       avgTemp,
       nightlyMin,
-      warmTrendScore: clamp(featureBundle.warmingAfterRain * 100, 0, 100),
     }),
   };
 }
@@ -891,7 +883,7 @@ function renderCombinedChart() {
   const tempMax = rawTempMax > 30 ? roundUpToStep(rawTempMax, 10) : 30;
   const rainValues = state.allDays.map((day) => day.expectedRainfall);
   const rainMax = Math.max(...rainValues, 0);
-  const rainTop = Math.max(10, roundUpToStep(rainMax, 5));
+  const rainTop = rainMax > 10 ? roundUpToStep(rainMax, 10) : 10;
   const rainBands = buildRainIntensityBands(rainValues);
   const rainDescriptor = mobile
     ? `L<=${rainBands.lightMax.toFixed(1)} M<=${rainBands.mediumMax.toFixed(1)} H>${rainBands.heavyMin.toFixed(1)} mm`
@@ -911,6 +903,7 @@ function renderCombinedChart() {
   const yTempAt = (value) => margin.top + plotHeight - ((value - tempMin) / Math.max(tempMax - tempMin, 8)) * plotHeight;
   const yRainAt = (value) => margin.top + plotHeight - (value / rainTop) * plotHeight;
   const freezingLineY = yTempAt(0);
+  const showFreezingLine = tempMin < 0 && tempMax >= 0;
   const focusDateShort = state.focusDate ? formatShortDate(state.focusDate) : "";
 
   const minPoints = state.allDays.map((day, index) => ({ x: xAt(index), y: yTempAt(day.minTemp) }));
@@ -949,8 +942,12 @@ function renderCombinedChart() {
           <text class="y-label" x="${width - margin.right + 16}" y="${y + 4}" text-anchor="start">${rainValue} mm</text>
         `;
       }).join("")}
-      <line class="freezing-line" x1="${margin.left}" y1="${freezingLineY}" x2="${width - margin.right}" y2="${freezingLineY}"></line>
-      <text class="freezing-label" x="${margin.left - 16}" y="${freezingLineY - 6}" text-anchor="end">0 C</text>
+      ${
+        showFreezingLine
+          ? `<line class="freezing-line" x1="${margin.left}" y1="${freezingLineY}" x2="${width - margin.right}" y2="${freezingLineY}"></line>
+      <text class="freezing-label" x="${margin.left - 16}" y="${freezingLineY - 6}" text-anchor="end">0 C</text>`
+          : ""
+      }
       <g clip-path="url(#${clipId})">
         <g class="combined-chart-track" style="transform: translateX(${fromTranslate}px); transform-box: fill-box; transform-origin: center;">
           ${
@@ -1071,7 +1068,7 @@ function renderSelectedDay() {
   elements.confidenceBadge.textContent = selectedDay.confidence;
   elements.analysisTitle.textContent = `${label} evidence`;
   elements.analysisCopy.textContent = "Select a day to inspect conditions.";
-  elements.seasonBadge.textContent = `${selectedDay.season} (weak prior)`;
+  elements.seasonBadge.textContent = `${selectedDay.season} seasonal context`;
   elements.detailDateLabel.textContent = label;
   elements.detailScore.textContent = `${selectedDay.score}/100`;
   elements.detailVerdict.textContent = selectedDay.verdict;
@@ -1224,7 +1221,6 @@ async function analyzeLocation(location, shouldMoveMap = true) {
     state.focusDate = state.scoredDays[0]?.date ?? null;
     renderCombinedChart();
     renderSelectedDay();
-    elements.contextCopy.textContent = `${state.forestType.replace("-", " ")} forest slightly adjusts the baseline signal.`;
     setStatus("Updated");
   } catch (error) {
     console.error(error);
@@ -1309,10 +1305,6 @@ elements.useLocationButton.addEventListener("click", () => {
     () => setStatus("Denied"),
     { enableHighAccuracy: true, maximumAge: 300000, timeout: 10000 },
   );
-});
-elements.forestTypeSelect.addEventListener("change", () => {
-  state.forestType = elements.forestTypeSelect.value;
-  analyzeLocation(state.selected, false);
 });
 elements.daySelector.addEventListener("click", (event) => {
   const button = event.target.closest("[data-day]");
