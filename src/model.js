@@ -1,12 +1,12 @@
 export const MODEL_METADATA = {
-  modelVersion: "v7.1.0",
+  modelVersion: "v7.2.0",
   modelType: "guild_mixture_rule_model",
   calibrationMethod: "bounded_guild_blend",
   trainedWindow: {
     from: "2024-01-01",
     to: "2026-05-20",
   },
-  featureSchemaHash: "ff-v7_1-global-calibration-20260520",
+  featureSchemaHash: "ff-v7_2-rain-persistence-smoothing-20260520",
   targetDefinition: "P(detectable_fruiting_presence_local_window_2_3d)",
   radiusKm: 50,
 };
@@ -33,21 +33,21 @@ export const SCORING_CONFIG = {
   guildConfigs: {
     summer_warm_humid: {
       temperatureWindow: { low: 4, bestLow: 16, bestHigh: 27, high: 36 },
-      rain: { peakDayMin: 1.0, peakDayMax: 2.8, peakShiftSevere: 0.45, widthDays: 1.9, baseHalfLife: 2.6, heavyBonus: 1.6, severeBonus: 2.8 },
+      rain: { peakDayMin: 1.0, peakDayMax: 2.8, peakShiftSevere: 0.45, widthDays: 2.15, baseHalfLife: 3.0, heavyBonus: 1.9, severeBonus: 3.1 },
       drying: { tempMidC: 23, tempHighC: 30, vpdMid: 1.0, vpdHigh: 1.7, tailReductionAtMaxDrying: 0.52 },
       frost: { startC: 2, severeC: -4, maxPenalty: 0.2 },
       weights: { rain: 0.45, temp: 0.35, drying: 0.1, frost: 0.1 },
     },
     fall_cool_moist: {
       temperatureWindow: { low: 0, bestLow: 8, bestHigh: 17, high: 27 },
-      rain: { peakDayMin: 1.3, peakDayMax: 3.4, peakShiftSevere: 0.6, widthDays: 1.85, baseHalfLife: 3.0, heavyBonus: 1.9, severeBonus: 3.2 },
+      rain: { peakDayMin: 1.3, peakDayMax: 3.4, peakShiftSevere: 0.6, widthDays: 2.05, baseHalfLife: 3.35, heavyBonus: 2.15, severeBonus: 3.45 },
       drying: { tempMidC: 20, tempHighC: 27, vpdMid: 0.95, vpdHigh: 1.55, tailReductionAtMaxDrying: 0.47 },
       frost: { startC: 3, severeC: -2, maxPenalty: 0.36 },
       weights: { rain: 0.46, temp: 0.3, drying: 0.08, frost: 0.16 },
     },
     winter_frost_tolerant: {
       temperatureWindow: { low: -10, bestLow: 1, bestHigh: 10, high: 18 },
-      rain: { peakDayMin: 1.7, peakDayMax: 4.0, peakShiftSevere: 0.7, widthDays: 2.1, baseHalfLife: 3.8, heavyBonus: 2.2, severeBonus: 3.6 },
+      rain: { peakDayMin: 1.7, peakDayMax: 4.0, peakShiftSevere: 0.7, widthDays: 2.25, baseHalfLife: 4.1, heavyBonus: 2.35, severeBonus: 3.85 },
       drying: { tempMidC: 15, tempHighC: 23, vpdMid: 0.9, vpdHigh: 1.4, tailReductionAtMaxDrying: 0.38 },
       frost: { startC: 0, severeC: -8, maxPenalty: 0.1 },
       weights: { rain: 0.44, temp: 0.28, drying: 0.1, frost: 0.06 },
@@ -192,6 +192,10 @@ function buildGuildRainSignal({ rainHistory21d, currentRain, meanTemp3, vpd3, gu
     guildConfig.rain.heavyBonus * clamp(scale(peakRainAmount, thresholds.medium, thresholds.heavy), 0, 1) +
     guildConfig.rain.severeBonus * severeShare;
   const tailBoost = tailFromHalfLife(daysSincePeakRain, halfLife) * normalizedEventStrength;
+  const rainPersistence7d = rainHistory21d
+    .slice(0, 7)
+    .reduce((sum, rain, idx) => sum + (Number.isFinite(rain) ? rain : 0) * Math.exp(-0.35 * idx), 0);
+  const persistenceSupport = centeredScale(rainPersistence7d, 0, 6, 18, 44);
 
   const tempDrying = Math.max(
     scale(meanTemp3, guildConfig.drying.tempMidC, guildConfig.drying.tempHighC),
@@ -210,7 +214,7 @@ function buildGuildRainSignal({ rainHistory21d, currentRain, meanTemp3, vpd3, gu
     (guildConfig === SCORING_CONFIG.guildConfigs.winter_frost_tolerant ? 0.06 : guildConfig === SCORING_CONFIG.guildConfigs.fall_cool_moist ? 0.1 : 0.12);
 
   let rainEventComponent = clamp(
-    (0.56 * laggedBoost + 0.44 * dryingAdjustedTail) * climatePreset.rainBoostMultiplier - rainDaySuppression,
+    (0.44 * laggedBoost + 0.36 * dryingAdjustedTail + 0.2 * persistenceSupport) * climatePreset.rainBoostMultiplier - rainDaySuppression,
     0,
     1,
   );
@@ -223,6 +227,7 @@ function buildGuildRainSignal({ rainHistory21d, currentRain, meanTemp3, vpd3, gu
     daysSincePeakRain,
     laggedBoost,
     tailBoost,
+    persistenceSupport,
     dryingAdjustedTail,
     dryingIndex,
     peakRainAmount,
