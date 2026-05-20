@@ -495,6 +495,14 @@ dd {
   gap: 6px;
 }
 
+.mobile-tabs {
+  display: none;
+}
+
+.mobile-section {
+  display: block;
+}
+
 .timeline-button {
   min-width: 104px;
 }
@@ -952,6 +960,96 @@ dd {
 
 }
 
+@media (max-width: 860px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .control-pane {
+    padding: 18px;
+    gap: 14px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(49, 95, 71, 0.12);
+  }
+
+  .map-pane {
+    grid-template-rows: 220px auto;
+  }
+
+  .forecast-panel {
+    padding: 16px 14px 22px;
+    gap: 12px;
+  }
+
+  .analysis-panel {
+    padding: 12px;
+    gap: 10px;
+    border-radius: 12px;
+  }
+
+  .mobile-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .mobile-tab {
+    min-height: 38px;
+    border: 1px solid rgba(49, 95, 71, 0.24);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.78);
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+
+  .mobile-tab.is-active {
+    background: rgba(198, 218, 205, 0.56);
+    color: #1f3529;
+    border-color: rgba(49, 95, 71, 0.5);
+  }
+
+  .mobile-section {
+    display: none;
+  }
+
+  .mobile-section.is-active {
+    display: block;
+  }
+
+  .chart-card,
+  .detail-panel,
+  .regional-panel {
+    border-radius: 12px;
+    padding: 12px;
+  }
+
+  .chart-card-header h4 {
+    font-size: 1rem;
+  }
+
+  .chart-card-header p {
+    font-size: 0.82rem;
+  }
+
+  .detail-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .regional-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .regional-tiles {
+    min-height: 360px;
+  }
+
+  .regional-tiles-track {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 620px) {
   .control-pane,
   .forecast-panel {
@@ -982,6 +1080,11 @@ dd {
   .regional-grid,
   .breakdown-strip {
     grid-template-columns: 1fr;
+  }
+
+  .regional-tiles-track {
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(8, minmax(0, 1fr));
   }
 
   .chart-mount {

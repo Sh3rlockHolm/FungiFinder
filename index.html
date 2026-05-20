@@ -10,7 +10,7 @@
       integrity="sha256-p4NxAoJBhIINfQO8jQ6fQX9mSfjT07U7F4D5W5N2r8E="
       crossorigin=""
     />
-    <link rel="stylesheet" href="./styles.css?v=20260520-6" />
+    <link rel="stylesheet" href="./styles.css?v=20260520-9" />
   </head>
   <body>
     <main class="app-shell">
@@ -100,47 +100,58 @@
                 Tap a day below or in the chart to inspect it.
               </p>
             </div>
-            <div class="timeline-controls" id="daySelector" aria-label="Choose day"></div>
-            <section class="chart-card" id="chartCard" aria-label="Combined weather timeline">
-              <div class="chart-card-header">
-                <div>
-                  <h4>General conditions timeline</h4>
-                  <p>Rainfall bars with min, average, and max temperature curves.</p>
+            <nav class="mobile-tabs" id="mobileTabs" aria-label="Mobile content sections">
+              <button type="button" class="mobile-tab is-active" data-mobile-tab="overview">Overview</button>
+              <button type="button" class="mobile-tab" data-mobile-tab="details">Details</button>
+              <button type="button" class="mobile-tab" data-mobile-tab="examples">Examples</button>
+            </nav>
+            <section class="mobile-section is-active" id="mobileOverviewSection">
+              <div class="timeline-controls" id="daySelector" aria-label="Choose day"></div>
+              <section class="chart-card" id="chartCard" aria-label="Combined weather timeline">
+                <div class="chart-card-header">
+                  <div>
+                    <h4>General conditions timeline</h4>
+                    <p>Rainfall bars with min, average, and max temperature curves.</p>
+                  </div>
+                  <span class="chart-unit">7 days back, 7 ahead</span>
                 </div>
-                <span class="chart-unit">7 days back, 7 ahead</span>
-              </div>
-              <div class="chart-mount chart-mount-wide" id="combinedChart" tabindex="0"></div>
+                <div class="chart-mount chart-mount-wide" id="combinedChart" tabindex="0"></div>
+              </section>
             </section>
-            <section class="detail-panel" id="detailPanel" aria-label="Selected day detail">
-              <div class="detail-header">
-                <div>
-                  <p class="eyebrow">Highlighted day</p>
-                  <h4 id="detailDateLabel">Today</h4>
+            <section class="mobile-section" id="mobileDetailsSection">
+              <section class="detail-panel" id="detailPanel" aria-label="Selected day detail">
+                <div class="detail-header">
+                  <div>
+                    <p class="eyebrow">Highlighted day</p>
+                    <h4 id="detailDateLabel">Today</h4>
+                  </div>
+                  <div class="detail-score">
+                    <strong id="detailScore">--</strong>
+                    <span id="detailVerdict">--</span>
+                  </div>
                 </div>
-                <div class="detail-score">
-                  <strong id="detailScore">--</strong>
-                  <span id="detailVerdict">--</span>
-                </div>
-              </div>
-              <div class="detail-metrics" id="detailMetrics"></div>
-              <p class="detail-copy" id="detailCopy">
-                The highlighted day explains how general growing conditions line up at that point in the timeline.
-              </p>
+                <div class="detail-metrics" id="detailMetrics"></div>
+                <p class="detail-copy" id="detailCopy">
+                  The highlighted day explains how general growing conditions line up at that point in the timeline.
+                </p>
+              </section>
             </section>
-            <section class="regional-panel" aria-label="Regional observation signal">
-              <div class="regional-heading">
-                <div>
-                  <p class="eyebrow">Observer coverage context</p>
-                  <h4>Nearby reports (context only)</h4>
+            <section class="mobile-section" id="mobileExamplesSection">
+              <section class="regional-panel" aria-label="Regional observation signal">
+                <div class="regional-heading">
+                  <div>
+                    <p class="eyebrow">Observer coverage context</p>
+                    <h4>Nearby reports (context only)</h4>
+                  </div>
+                  <span class="chart-unit" id="regionalConfidence"></span>
                 </div>
-                <span class="chart-unit" id="regionalConfidence"></span>
-              </div>
-              <div class="regional-grid" id="regionalMetrics"></div>
-              <div class="regional-tiles" id="regionalTiles" aria-label="Recent nearby research observations"></div>
-              <div class="regional-pagination" id="regionalPagination"></div>
-              <p class="detail-copy" id="regionalCopy">
-                Nearby observation data calibrates the score.
-              </p>
+                <div class="regional-grid" id="regionalMetrics"></div>
+                <div class="regional-tiles" id="regionalTiles" aria-label="Recent nearby research observations"></div>
+                <div class="regional-pagination" id="regionalPagination"></div>
+                <p class="detail-copy" id="regionalCopy">
+                  Nearby observation data calibrates the score.
+                </p>
+              </section>
             </section>
           </section>
         </section>
@@ -164,6 +175,6 @@
       integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
       crossorigin=""
     ></script>
-    <script type="module" src="./src/app.js?v=20260520-7"></script>
+    <script type="module" src="./src/app.js?v=20260520-9"></script>
   </body>
 </html>

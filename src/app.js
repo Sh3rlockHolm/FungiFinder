@@ -37,6 +37,10 @@ const elements = {
   forestTypeSelect: document.querySelector("#forestTypeSelect"),
   locationInput: document.querySelector("#locationInput"),
   locationSuggestions: document.querySelector("#locationSuggestions"),
+  mobileTabs: document.querySelector("#mobileTabs"),
+  mobileOverviewSection: document.querySelector("#mobileOverviewSection"),
+  mobileDetailsSection: document.querySelector("#mobileDetailsSection"),
+  mobileExamplesSection: document.querySelector("#mobileExamplesSection"),
   placeLabel: document.querySelector("#placeLabel"),
   daySelector: document.querySelector("#daySelector"),
   regionalConfidence: document.querySelector("#regionalConfidence"),
@@ -971,6 +975,31 @@ function renderDaySelector() {
     .join("");
 }
 
+function setMobileTab(tab) {
+  const available = ["overview", "details", "examples"];
+  const target = available.includes(tab) ? tab : "overview";
+  const isMobile = window.matchMedia("(max-width: 860px)").matches;
+  const sectionMap = {
+    overview: elements.mobileOverviewSection,
+    details: elements.mobileDetailsSection,
+    examples: elements.mobileExamplesSection,
+  };
+  Object.entries(sectionMap).forEach(([key, section]) => {
+    if (!section) return;
+    if (!isMobile) {
+      section.classList.add("is-active");
+      return;
+    }
+    section.classList.toggle("is-active", key === target);
+  });
+  if (!elements.mobileTabs) return;
+  elements.mobileTabs.querySelectorAll("[data-mobile-tab]").forEach((button) => {
+    const active = button.dataset.mobileTab === target;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  });
+}
+
 function renderSelectedDay() {
   const selectedDay = getSelectedDay();
   if (!selectedDay) return;
@@ -1230,6 +1259,11 @@ elements.daySelector.addEventListener("click", (event) => {
   if (!button) return;
   setFocusDate(button.dataset.day);
 });
+elements.mobileTabs.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-mobile-tab]");
+  if (!button) return;
+  setMobileTab(button.dataset.mobileTab);
+});
 elements.regionalPagination.addEventListener("click", (event) => {
   const button = event.target.closest("[data-regional-page]");
   if (!button) return;
@@ -1281,9 +1315,14 @@ elements.combinedChart.addEventListener("click", (event) => {
   if (inSelectableRange) setFocusDate(clicked.date);
 });
 window.addEventListener("resize", renderCombinedChart);
+window.addEventListener("resize", () => {
+  const active = elements.mobileTabs.querySelector(".is-active")?.dataset.mobileTab ?? "overview";
+  setMobileTab(active);
+});
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && elements.imageModal && !elements.imageModal.hidden) closeImageModal();
 });
 
 initMap();
+setMobileTab("overview");
 analyzeLocation(state.selected);
