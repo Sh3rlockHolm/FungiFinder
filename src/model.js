@@ -1,12 +1,12 @@
 export const MODEL_METADATA = {
-  modelVersion: "v7.0.0",
+  modelVersion: "v7.1.0",
   modelType: "guild_mixture_rule_model",
   calibrationMethod: "bounded_guild_blend",
   trainedWindow: {
     from: "2024-01-01",
     to: "2026-05-20",
   },
-  featureSchemaHash: "ff-v7_0-guild-mixture-20260520",
+  featureSchemaHash: "ff-v7_1-global-calibration-20260520",
   targetDefinition: "P(detectable_fruiting_presence_local_window_2_3d)",
   radiusKm: 50,
 };
@@ -22,7 +22,13 @@ export const SCORING_CONFIG = {
     },
     scoreBounds: { min: 0.06, max: 0.97 },
     horizonPenaltyMax: 0.13,
-    sparseRegionalPenalty: 0.015,
+    sparseRegionalPenalty: 0.01,
+    scoreTransform: {
+      center: 0.41,
+      slope: 5.2,
+      transformedWeight: 0.75,
+      rawWeight: 0.25,
+    },
   },
   guildConfigs: {
     summer_warm_humid: {
@@ -121,6 +127,10 @@ function centeredScale(value, low, bestLow, bestHigh, high) {
   if (value >= bestLow && value <= bestHigh) return 1;
   if (value < bestLow) return (value - low) / Math.max(bestLow - low, 1e-9);
   return (high - value) / Math.max(high - bestHigh, 1e-9);
+}
+
+function sigmoid(value) {
+  return 1 / (1 + Math.exp(-value));
 }
 
 function chooseClimatePreset(latitude) {
@@ -384,11 +394,19 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
 
 export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStats }) {
   const rawEcologicalScore = clamp(
-    0.52 * (featureVector.rainEventComponent ?? 0) +
-      0.31 * (featureVector.temperatureComponent ?? 0) +
-      0.04 * (featureVector.seasonalComponent ?? 0) -
-      0.07 * (featureVector.dryingPenalty ?? 0) -
-      0.06 * (featureVector.coldPenalty ?? 0),
+    0.58 * (featureVector.rainEventComponent ?? 0) +
+      0.34 * (featureVector.temperatureComponent ?? 0) +
+      0.05 * (featureVector.seasonalComponent ?? 0) -
+      0.05 * (featureVector.dryingPenalty ?? 0) -
+      0.05 * (featureVector.coldPenalty ?? 0),
+    0,
+    1,
+  );
+
+  const transform = SCORING_CONFIG.globalConfig.scoreTransform;
+  const transformedScore = sigmoid((rawEcologicalScore - transform.center) * transform.slope);
+  const calibratedEcologicalScore = clamp(
+    transform.transformedWeight * transformedScore + transform.rawWeight * rawEcologicalScore,
     0,
     1,
   );
@@ -404,7 +422,11 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
   );
 
   const bounds = SCORING_CONFIG.globalConfig.scoreBounds;
-  const adjustedProbability = clamp((rawEcologicalScore + warmRainSynergy) * (1 - horizonPenalty) - regionalPenalty, bounds.min, bounds.max);
+  const adjustedProbability = clamp(
+    (calibratedEcologicalScore + warmRainSynergy) * (1 - horizonPenalty) - regionalPenalty,
+    bounds.min,
+    bounds.max,
+  );
 
   const calibrationRisk = adjustedProbability > 0.9 || adjustedProbability < 0.1;
   let confidence = "High confidence";
@@ -449,9 +471,11 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
       calibration: MODEL_METADATA.calibrationMethod,
       calibrationRisk,
       componentBreakdown,
+      calibratedEcologicalScore,
       daysAhead,
       horizonPenalty,
       rawEcologicalScore,
+      transformedScore,
       sparseRegional,
     },
   };
