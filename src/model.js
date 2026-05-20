@@ -1,12 +1,12 @@
 export const MODEL_METADATA = {
-  modelVersion: "v7.3.0",
+  modelVersion: "v7.4.0",
   modelType: "guild_mixture_rule_model",
   calibrationMethod: "bounded_guild_blend",
   trainedWindow: {
     from: "2024-01-01",
     to: "2026-05-20",
   },
-  featureSchemaHash: "ff-v7_3-nonlinear-drydown-20260521",
+  featureSchemaHash: "ff-v7_4-event-kernel-20260521",
   targetDefinition: "P(detectable_fruiting_presence_local_window_2_3d)",
   radiusKm: 50,
 };
@@ -178,6 +178,29 @@ function drydownPersistenceFactor(daysSinceSignificantRain) {
   return Math.max(0.16, 0.86 * Math.exp(-0.42 * late));
 }
 
+// Event-size-aware kernel: rise through days 1-2, peak around day 3,
+// taper through day 4, then stronger decay near day 5-6+.
+function eventKernel(daysSince, intensity01) {
+  if (!Number.isFinite(daysSince) || daysSince < 0) return 1;
+  const peakDay = 2.6 + 0.7 * clamp(intensity01, 0, 1);
+  const riseWindow = 1.2;
+  const prePeak = daysSince <= peakDay
+    ? clamp(0.68 + 0.32 * ((daysSince + riseWindow) / (peakDay + riseWindow)), 0.68, 1)
+    : 1;
+
+  const taperStart = peakDay;
+  const taperEnd = 4.6 + 0.8 * clamp(intensity01, 0, 1);
+  if (daysSince <= taperStart) return prePeak;
+  if (daysSince <= taperEnd) {
+    const t = (daysSince - taperStart) / Math.max(0.25, taperEnd - taperStart);
+    return prePeak * (1 - 0.22 * t);
+  }
+
+  const late = daysSince - taperEnd;
+  const lateDecayRate = 0.78 - 0.22 * clamp(intensity01, 0, 1);
+  return Math.max(0.08, prePeak * 0.78 * Math.exp(-lateDecayRate * late));
+}
+
 function normalizeWeights(raw) {
   const entries = Object.entries(raw).map(([key, value]) => [key, Math.max(0, Number.isFinite(value) ? value : 0)]);
   const sum = entries.reduce((acc, [, value]) => acc + value, 0);
@@ -202,6 +225,7 @@ function buildGuildRainSignal({ rainHistory21d, currentRain, meanTemp3, vpd3, gu
 
   const normalizedEventStrength = clamp(scale(peakRainAmount, thresholds.light, thresholds.severe), 0, 1);
   const severeShare = clamp(scale(peakRainAmount, thresholds.heavy, thresholds.severe), 0, 1);
+  const eventQualified = peakRainAmount >= thresholds.medium;
 
   const peakDay =
     guildConfig.rain.peakDayMin +
@@ -219,9 +243,10 @@ function buildGuildRainSignal({ rainHistory21d, currentRain, meanTemp3, vpd3, gu
     .reduce((sum, rain, idx) => sum + (Number.isFinite(rain) ? rain : 0) * Math.exp(-0.35 * idx), 0);
   const persistenceSupport = centeredScale(rainPersistence7d, 0, 6, 18, 44);
 
-  const laggedBoostAdjusted = laggedBoost * drydownFactor;
-  const tailBoostAdjusted = tailBoost * drydownFactor;
-  const persistenceAdjusted = persistenceSupport * drydownFactor;
+  const kernel = eventQualified ? eventKernel(daysSincePeakRain, severeShare) : 0.42;
+  const laggedBoostAdjusted = laggedBoost * drydownFactor * kernel;
+  const tailBoostAdjusted = tailBoost * drydownFactor * kernel;
+  const persistenceAdjusted = persistenceSupport * drydownFactor * kernel;
 
   const tempDrying = Math.max(
     scale(meanTemp3, guildConfig.drying.tempMidC, guildConfig.drying.tempHighC),
@@ -240,13 +265,14 @@ function buildGuildRainSignal({ rainHistory21d, currentRain, meanTemp3, vpd3, gu
     (guildConfig === SCORING_CONFIG.guildConfigs.winter_frost_tolerant ? 0.06 : guildConfig === SCORING_CONFIG.guildConfigs.fall_cool_moist ? 0.1 : 0.12);
 
   let rainEventComponent = clamp(
-    (0.44 * laggedBoostAdjusted + 0.36 * (dryingAdjustedTail * drydownFactor) + 0.2 * persistenceAdjusted) * climatePreset.rainBoostMultiplier - rainDaySuppression,
+    (0.46 * laggedBoostAdjusted + 0.34 * (dryingAdjustedTail * drydownFactor * kernel) + 0.2 * persistenceAdjusted) * climatePreset.rainBoostMultiplier - rainDaySuppression,
     0,
     1,
   );
   if (daysSincePeakRain >= 1 && daysSincePeakRain <= 3 && peakRainAmount >= thresholds.heavy) {
-    rainEventComponent = clamp(rainEventComponent + 0.07, 0, 1);
+    rainEventComponent = clamp(rainEventComponent + 0.1, 0, 1);
   }
+  if (!eventQualified) rainEventComponent *= 0.62;
 
   return {
     rainEventClass: classifyRainEvent(peakRainAmount, thresholds),
@@ -257,6 +283,8 @@ function buildGuildRainSignal({ rainHistory21d, currentRain, meanTemp3, vpd3, gu
     tailBoostAdjusted,
     persistenceSupport,
     persistenceAdjusted,
+    eventQualified,
+    eventKernel: kernel,
     daysSinceSignificantRain,
     drydownFactor,
     dryingAdjustedTail,
