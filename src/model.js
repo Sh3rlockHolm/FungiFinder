@@ -1,12 +1,12 @@
 export const MODEL_METADATA = {
-  modelVersion: "v6.1.0",
+  modelVersion: "v6.2.0",
   modelType: "rule_driven_rain_event_scoring",
   calibrationMethod: "bounded_component_blend",
   trainedWindow: {
     from: "2024-01-01",
     to: "2026-05-20",
   },
-  featureSchemaHash: "ff-v6_1-rain-event-lag-tail-tuned-20260520",
+  featureSchemaHash: "ff-v6_2-warm-season-rebalance-20260520",
   targetDefinition: "P(detectable_fruiting_presence_local_window_2_3d)",
   radiusKm: 50,
 };
@@ -46,8 +46,8 @@ export const SCORING_CONFIG = {
   temperatureWindow: {
     low: 0,
     bestLow: 9,
-    bestHigh: 24,
-    high: 34,
+    bestHigh: 26,
+    high: 35,
   },
   coldPenalty: {
     startC: 3,
@@ -55,14 +55,14 @@ export const SCORING_CONFIG = {
     maxPenalty: 0.34,
   },
   componentWeights: {
-    rainEvent: 0.5,
-    temperature: 0.3,
+    rainEvent: 0.47,
+    temperature: 0.34,
     drying: 0.08,
     cold: 0.08,
-    seasonal: 0.04,
+    seasonal: 0.03,
   },
   scoreBounds: {
-    min: 0.03,
+    min: 0.06,
     max: 0.97,
   },
 };
@@ -325,13 +325,21 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
     1,
   );
 
-  const horizonPenalty = clamp(daysAhead / 10, 0, 0.16);
+  const horizonPenalty = clamp(daysAhead / 10, 0, 0.13);
   const sparseRegional = !regionalStats || (regionalStats.totalObservations ?? 0) < 20;
-  const regionalPenalty = sparseRegional ? 0.03 : 0;
+  const regionalPenalty = sparseRegional ? 0.015 : 0;
+
+  const warmRainSynergy = clamp(
+    0.14 *
+      scale(featureVector.temperatureComponent ?? 0, 0.72, 1) *
+      scale(featureVector.rainEventComponent ?? 0, 0.42, 1),
+    0,
+    0.14,
+  );
 
   const bounded = SCORING_CONFIG.scoreBounds;
   const adjustedProbability = clamp(
-    rawComponentScore * (1 - horizonPenalty) - regionalPenalty,
+    (rawComponentScore + warmRainSynergy) * (1 - horizonPenalty) - regionalPenalty,
     bounded.min,
     bounded.max,
   );
@@ -378,6 +386,7 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
       componentBreakdown,
       daysAhead,
       horizonPenalty,
+      warmRainSynergy,
       rawComponentScore,
       sparseRegional,
     },
