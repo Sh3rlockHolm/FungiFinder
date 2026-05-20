@@ -990,9 +990,15 @@ function setMobileTab(tab) {
       section.classList.add("is-active");
       return;
     }
-    section.classList.toggle("is-active", key === target);
+    // Mobile uses a single scroll narrative instead of tabbed panes.
+    section.classList.add("is-active");
   });
   if (!elements.mobileTabs) return;
+  if (isMobile) {
+    elements.mobileTabs.hidden = true;
+    return;
+  }
+  elements.mobileTabs.hidden = false;
   elements.mobileTabs.querySelectorAll("[data-mobile-tab]").forEach((button) => {
     const active = button.dataset.mobileTab === target;
     button.classList.toggle("is-active", active);
