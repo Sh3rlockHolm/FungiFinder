@@ -1,12 +1,12 @@
 export const MODEL_METADATA = {
-  modelVersion: "v8.0.0",
+  modelVersion: "v8.1.3",
   modelType: "guild_mixture_rain5d_model",
   calibrationMethod: "bounded_guild_blend_rain5d",
   trainedWindow: {
     from: "2024-01-01",
     to: "2026-05-20",
   },
-  featureSchemaHash: "ff-v8_0-rain5d-hybrid-crash-20260521",
+  featureSchemaHash: "ff-v8_1_3-memory-dynamic-blend-soft-calibration-20260521",
   targetDefinition: "P(detectable_fruiting_presence_local_window_2_3d)",
   radiusKm: 50,
 };
@@ -24,30 +24,41 @@ export const SCORING_CONFIG = {
     rain5d: {
       dayWeights: [0.22, 0.28, 0.24, 0.16, 0.1],
       saturating: {
-        inflectionMm: 10,
-        slope: 0.22,
+        inflectionMm: 7.5,
+        slope: 0.26,
         maxSupport: 1,
       },
       oversaturation: {
-        startMm: 48,
-        fullMm: 78,
-        maxPenalty: 0.18,
+        startMm: 65,
+        fullMm: 105,
+        maxPenalty: 0.08,
       },
+    },
+    antecedentRainMemory: {
+      windowDays: 10,
+      halfLifeDays: 3.5,
+      inflectionMm: 14,
+      slope: 0.19,
+      blendWeight: 0.16,
+      decayStartDryDays: 1,
+      decayRate: 0.24,
+      tempGate: { coolC: 8, warmC: 16 },
+      vpdDecayMultiplier: 0.75,
     },
     drydown: {
       dryday_breakpoints: {
         light: { strongStart: 4, crashStart: 5 },
-        medium: { strongStart: 5, crashStart: 6 },
-        heavy: { strongStart: 6, crashStart: 7 },
-        severe: { strongStart: 7, crashStart: 8 },
+        medium: { strongStart: 7, crashStart: 9 },
+        heavy: { strongStart: 8, crashStart: 10 },
+        severe: { strongStart: 9, crashStart: 11 },
       },
-      vpd_gate: { soft: 0.95, hard: 1.35 },
+      vpd_gate: { soft: 0.85, hard: 1.6 },
       rain_class_delay: {
         none: 0,
         light: 0,
-        medium: 1,
-        heavy: 2,
-        severe: 3,
+        medium: 2,
+        heavy: 4,
+        severe: 5,
       },
       minFactor: 0.1,
     },
@@ -55,10 +66,10 @@ export const SCORING_CONFIG = {
     horizonPenaltyMax: 0.13,
     sparseRegionalPenalty: 0.01,
     scoreTransform: {
-      center: 0.41,
-      slope: 5.2,
-      transformedWeight: 0.75,
-      rawWeight: 0.25,
+      center: 0.43,
+      slope: 4.8,
+      transformedWeight: 0.68,
+      rawWeight: 0.32,
     },
   },
   guildConfigs: {
@@ -161,6 +172,16 @@ function sigmoid(value) {
   return 1 / (1 + Math.exp(-value));
 }
 
+function computeApiRain(rainHistory, halfLifeDays) {
+  const decay = Math.log(2) / Math.max(0.5, halfLifeDays);
+  return rainHistory.reduce((total, rainMm, dayIndex) => {
+    const rain = Number.isFinite(rainMm) ? Math.max(0, rainMm) : 0;
+    if (rain <= 0) return total;
+    const weight = Math.exp(-decay * dayIndex);
+    return total + rain * weight;
+  }, 0);
+}
+
 function chooseClimatePreset(latitude) {
   const absLat = Math.abs(Number.isFinite(latitude) ? latitude : 45);
   if (absLat <= 23) return "humid";
@@ -217,6 +238,29 @@ function rain5dFeatures(rainHistory21d, config) {
     rain5d_weighted,
     rain5d_response,
     oversatPenalty,
+  };
+}
+
+function antecedentRainMemoryFeatures({ rainHistory21d, dryDaysSinceMeaningfulRain, vpd3, meanTemp3, config, vpdGate }) {
+  const window = Math.max(5, config.windowDays ?? 10);
+  const rainWindow = rainHistory21d.slice(0, window);
+  const apiMm = computeApiRain(rainWindow, config.halfLifeDays ?? 3.5);
+  const normalizedMemory = sigmoid((apiMm - (config.inflectionMm ?? 14)) * (config.slope ?? 0.19));
+
+  const vpdSoft = scale(vpd3, vpdGate.soft, vpdGate.hard);
+  const dryDaysLate = Math.max(0, dryDaysSinceMeaningfulRain - (config.decayStartDryDays ?? 1));
+  const vpdDecayMultiplier = config.vpdDecayMultiplier ?? 0.75;
+  const decayRate = (config.decayRate ?? 0.24) * (1 + vpdDecayMultiplier * vpdSoft);
+  const retention = Math.exp(-decayRate * dryDaysLate);
+  const tempGate = config.tempGate ?? { coolC: 8, warmC: 16 };
+  const thermalGate = scale(meanTemp3, tempGate.coolC, tempGate.warmC);
+  const memorySignal = clamp(normalizedMemory * retention * (0.55 + 0.45 * thermalGate), 0, 1);
+
+  return {
+    memoryApiMm: apiMm,
+    normalizedMemory,
+    memoryRetention: retention,
+    memorySignal,
   };
 }
 
@@ -307,6 +351,21 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
     rainMagnitudeClass,
     drydownConfig: SCORING_CONFIG.globalConfig.drydown,
   });
+  const antecedentMemory = antecedentRainMemoryFeatures({
+    rainHistory21d,
+    dryDaysSinceMeaningfulRain,
+    vpd3,
+    meanTemp3,
+    config: SCORING_CONFIG.globalConfig.antecedentRainMemory,
+    vpdGate: SCORING_CONFIG.globalConfig.drydown.vpd_gate,
+  });
+  const baseMemoryWeight = clamp(SCORING_CONFIG.globalConfig.antecedentRainMemory.blendWeight ?? 0.16, 0, 0.35);
+  const dynamicMemoryWeight = clamp(0.04 + baseMemoryWeight * scale(rain5.rain5d_response, 0.15, 0.55), 0.04, 0.28);
+  const rainMoistureSignal = clamp(
+    (1 - dynamicMemoryWeight) * rain5.rain5d_response + dynamicMemoryWeight * antecedentMemory.memorySignal,
+    0,
+    1,
+  );
 
   const guildScores = {};
   Object.entries(SCORING_CONFIG.guildConfigs).forEach(([guildKey, guildConfig]) => {
@@ -325,7 +384,7 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
     const coldPenalty =
       scale(guildConfig.frost.startC - nightlyMin3, 0, guildConfig.frost.startC - guildConfig.frost.severeC) * guildConfig.frost.maxPenalty;
 
-    const rainSupport = clamp(rain5.rain5d_response * drydown.drydownCrashFactor * climatePreset.rainBoostMultiplier, 0, 1);
+    const rainSupport = clamp(rainMoistureSignal * drydown.drydownCrashFactor * climatePreset.rainBoostMultiplier, 0, 1);
 
     const guildScore = clamp(
       guildConfig.weights.rain * rainSupport +
@@ -388,8 +447,9 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
     rainEventComponent: blended.rainEventComponent,
     laggedFruitingBoost: guildScores[dominantGuild].rainEventComponent,
     moistureTailBoost: rain5.rain5d_response,
+    antecedentMoistureMemory: antecedentMemory.memorySignal,
     rainDaySuppression: rain5.oversatPenalty,
-    dryingAdjustedTail: rain5.rain5d_response * drydown.drydownCrashFactor,
+    dryingAdjustedTail: rainMoistureSignal * drydown.drydownCrashFactor,
     temperatureComponent: blended.temperatureComponent,
     dryingPenalty: blended.dryingPenalty,
     coldPenalty: blended.coldPenalty,
@@ -414,6 +474,12 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
       rain5d_mm: rain5.rain5d_mm,
       rain5d_weighted: rain5.rain5d_weighted,
       rain5d_response: rain5.rain5d_response,
+      rainMemoryApiMm: antecedentMemory.memoryApiMm,
+      rainMemoryNormalized: antecedentMemory.normalizedMemory,
+      rainMemoryRetention: antecedentMemory.memoryRetention,
+      rainMemorySignal: antecedentMemory.memorySignal,
+      memoryBlendWeight: dynamicMemoryWeight,
+      rainMoistureSignal,
       dryDaysSinceMeaningfulRain,
       vpdDrynessState: drydown.vpdDrynessState,
       drydownCrashFactor: drydown.drydownCrashFactor,

@@ -1,4 +1,8 @@
-import { buildModelFeatures, inferFruitingSignal, MODEL_METADATA } from "../src/model.js";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
+import path from "node:path";
+
+const MODEL_MODULE_PATH = process.env.BACKTEST_MODEL_PATH ?? "../src/model.js";
+const { buildModelFeatures, inferFruitingSignal, MODEL_METADATA } = await import(MODEL_MODULE_PATH);
 
 const LOCATIONS = [
   { label: "Darien, CT", latitude: 41.0772, longitude: -73.4687 },
@@ -7,6 +11,18 @@ const LOCATIONS = [
 ];
 
 const BACKTEST_MODE = process.env.BACKTEST_MODE === "quick" ? "quick" : "full";
+const ENV_INAT_PAUSE_MS = Number(process.env.BACKTEST_INAT_PAUSE_MS);
+const ENV_INAT_RETRY_COUNT = Number(process.env.BACKTEST_INAT_RETRY_COUNT);
+const ENV_MAX_ROWS_PER_LOCATION = Number(process.env.BACKTEST_MAX_ROWS_PER_LOCATION);
+const ENV_INAT_DAY_STRIDE = Number(process.env.BACKTEST_INAT_DAY_STRIDE);
+const BACKTEST_SERIAL_INAT = process.env.BACKTEST_SERIAL_INAT === "1";
+const BACKTEST_CACHE_ONLY = process.env.BACKTEST_CACHE_ONLY === "1";
+const BACKTEST_FETCH_CACHE_PATH = process.env.BACKTEST_FETCH_CACHE_PATH ?? "./archive/backtest-fetch-cache.json";
+const envInatPauseMs = Number.isFinite(ENV_INAT_PAUSE_MS) && ENV_INAT_PAUSE_MS >= 0 ? ENV_INAT_PAUSE_MS : null;
+const envInatRetryCount = Number.isFinite(ENV_INAT_RETRY_COUNT) && ENV_INAT_RETRY_COUNT >= 1 ? Math.floor(ENV_INAT_RETRY_COUNT) : null;
+const envMaxRowsPerLocation =
+  Number.isFinite(ENV_MAX_ROWS_PER_LOCATION) && ENV_MAX_ROWS_PER_LOCATION >= 1 ? Math.floor(ENV_MAX_ROWS_PER_LOCATION) : null;
+const envInatDayStride = Number.isFinite(ENV_INAT_DAY_STRIDE) && ENV_INAT_DAY_STRIDE >= 1 ? Math.floor(ENV_INAT_DAY_STRIDE) : null;
 const BACKTEST_CONFIG = BACKTEST_MODE === "quick"
   ? {
       locations: LOCATIONS.slice(0, 1),
@@ -26,6 +42,21 @@ const BACKTEST_CONFIG = BACKTEST_MODE === "quick"
       inatPauseMs: 0,
       inatRetryCount: 4,
     };
+
+if (envInatPauseMs !== null) BACKTEST_CONFIG.inatPauseMs = envInatPauseMs;
+if (envInatRetryCount !== null) BACKTEST_CONFIG.inatRetryCount = envInatRetryCount;
+if (envMaxRowsPerLocation !== null) BACKTEST_CONFIG.maxRowsPerLocation = envMaxRowsPerLocation;
+if (envInatDayStride !== null) BACKTEST_CONFIG.inatDayStride = envInatDayStride;
+
+const fetchCachePathAbs = path.isAbsolute(BACKTEST_FETCH_CACHE_PATH)
+  ? BACKTEST_FETCH_CACHE_PATH
+  : path.resolve(process.cwd(), BACKTEST_FETCH_CACHE_PATH);
+const fetchCache = {
+  byUrl: new Map(),
+  hits: 0,
+  misses: 0,
+  writes: 0,
+};
 
 function iso(date) {
   return date.toISOString().slice(0, 10);
@@ -121,6 +152,61 @@ function median(values) {
   return (valid[middle - 1] + valid[middle]) / 2;
 }
 
+async function fetchJsonWithRetry(url, { attempts = 4, initialBackoffMs = 500, retryOnStatus = [] } = {}) {
+  let lastError = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) return response.json();
+      if (!retryOnStatus.includes(response.status) || attempt === attempts - 1) {
+        throw new Error(`Request failed ${response.status}`);
+      }
+      const waitMs = initialBackoffMs * 2 ** attempt;
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts - 1) throw error;
+      const waitMs = initialBackoffMs * 2 ** attempt;
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+  throw lastError ?? new Error("Request failed");
+}
+
+async function loadFetchCache() {
+  try {
+    const raw = await readFile(fetchCachePathAbs, "utf8");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && parsed.byUrl && typeof parsed.byUrl === "object") {
+      Object.entries(parsed.byUrl).forEach(([key, value]) => fetchCache.byUrl.set(key, value));
+    }
+  } catch {
+    // No cache yet is normal.
+  }
+}
+
+async function saveFetchCache() {
+  const byUrl = Object.fromEntries(fetchCache.byUrl.entries());
+  const payload = { byUrl, updatedAt: new Date().toISOString() };
+  await mkdir(path.dirname(fetchCachePathAbs), { recursive: true });
+  await writeFile(fetchCachePathAbs, JSON.stringify(payload), "utf8");
+}
+
+async function fetchJsonCached(url, options = {}) {
+  if (fetchCache.byUrl.has(url)) {
+    fetchCache.hits += 1;
+    return fetchCache.byUrl.get(url);
+  }
+  if (BACKTEST_CACHE_ONLY) {
+    throw new Error(`Cache miss in BACKTEST_CACHE_ONLY mode for URL: ${url}`);
+  }
+  fetchCache.misses += 1;
+  const payload = await fetchJsonWithRetry(url, options);
+  fetchCache.byUrl.set(url, payload);
+  fetchCache.writes += 1;
+  return payload;
+}
+
 async function fetchWeatherWindow(latitude, longitude, startDate, endDate) {
   const params = new URLSearchParams({
     latitude: latitude.toFixed(5),
@@ -131,9 +217,11 @@ async function fetchWeatherWindow(latitude, longitude, startDate, endDate) {
     daily: "temperature_2m_mean,temperature_2m_max,temperature_2m_min,precipitation_sum",
     hourly: "temperature_2m,relative_humidity_2m,soil_moisture_0_to_7cm",
   });
-  const response = await fetch(`https://archive-api.open-meteo.com/v1/archive?${params}`);
-  if (!response.ok) throw new Error(`Weather archive failed ${response.status}`);
-  return response.json();
+  return fetchJsonCached(`https://archive-api.open-meteo.com/v1/archive?${params}`, {
+    attempts: 5,
+    initialBackoffMs: 600,
+    retryOnStatus: [429, 500, 502, 503, 504],
+  });
 }
 
 function vpdFromTempRh(tempC, rh) {
@@ -154,22 +242,15 @@ async function fetchINatCount(latitude, longitude, d1, d2, extraParams = {}) {
     d2,
     ...extraParams,
   });
-  for (let attempt = 0; attempt < BACKTEST_CONFIG.inatRetryCount; attempt += 1) {
-    const response = await fetch(`https://api.inaturalist.org/v1/observations?${params}`);
-    if (response.ok) {
-      const payload = await response.json();
-      if (BACKTEST_CONFIG.inatPauseMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, BACKTEST_CONFIG.inatPauseMs));
-      }
-      return payload.total_results ?? 0;
-    }
-    if (response.status !== 429 || attempt === BACKTEST_CONFIG.inatRetryCount - 1) {
-      throw new Error(`iNaturalist failed ${response.status}`);
-    }
-    const backoffMs = 500 * 2 ** attempt;
-    await new Promise((resolve) => setTimeout(resolve, backoffMs));
+  const payload = await fetchJsonCached(`https://api.inaturalist.org/v1/observations?${params}`, {
+    attempts: BACKTEST_CONFIG.inatRetryCount,
+    initialBackoffMs: 500,
+    retryOnStatus: [429, 500, 502, 503, 504],
+  });
+  if (BACKTEST_CONFIG.inatPauseMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, BACKTEST_CONFIG.inatPauseMs));
   }
-  return 0;
+  return payload.total_results ?? 0;
 }
 
 async function buildRowsForLocation(location) {
@@ -246,15 +327,26 @@ async function buildRowsForLocation(location) {
       researchRecent14Observations = Math.round(recent14Observations * 0.55);
       seasonalObservations = baseline30Count;
     } else {
-      [future3dCount, baseline30Count, recent7Observations, recent14Observations, researchRecent14Observations, seasonalObservations] =
-        await Promise.all([
-          fetchINatCount(location.latitude, location.longitude, d1Future, d2Future),
-          fetchINatCount(location.latitude, location.longitude, d1Past30, d2Past1),
-          fetchINatCount(location.latitude, location.longitude, d1Recent7, day.date),
-          fetchINatCount(location.latitude, location.longitude, d1Recent14, day.date),
-          fetchINatCount(location.latitude, location.longitude, d1Recent14, day.date, { quality_grade: "research" }),
-          fetchINatCount(location.latitude, location.longitude, shift(day.date, -30), day.date),
-        ]);
+      if (BACKTEST_SERIAL_INAT) {
+        future3dCount = await fetchINatCount(location.latitude, location.longitude, d1Future, d2Future);
+        baseline30Count = await fetchINatCount(location.latitude, location.longitude, d1Past30, d2Past1);
+        recent7Observations = await fetchINatCount(location.latitude, location.longitude, d1Recent7, day.date);
+        recent14Observations = await fetchINatCount(location.latitude, location.longitude, d1Recent14, day.date);
+        researchRecent14Observations = await fetchINatCount(location.latitude, location.longitude, d1Recent14, day.date, {
+          quality_grade: "research",
+        });
+        seasonalObservations = await fetchINatCount(location.latitude, location.longitude, shift(day.date, -30), day.date);
+      } else {
+        [future3dCount, baseline30Count, recent7Observations, recent14Observations, researchRecent14Observations, seasonalObservations] =
+          await Promise.all([
+            fetchINatCount(location.latitude, location.longitude, d1Future, d2Future),
+            fetchINatCount(location.latitude, location.longitude, d1Past30, d2Past1),
+            fetchINatCount(location.latitude, location.longitude, d1Recent7, day.date),
+            fetchINatCount(location.latitude, location.longitude, d1Recent14, day.date),
+            fetchINatCount(location.latitude, location.longitude, d1Recent14, day.date, { quality_grade: "research" }),
+            fetchINatCount(location.latitude, location.longitude, shift(day.date, -30), day.date),
+          ]);
+      }
     }
 
     const baselinePer3d = Math.max(0.5, (baseline30Count / 30) * 3);
@@ -329,6 +421,7 @@ function rollingTimeSplits(rows) {
 }
 
 async function main() {
+  await loadFetchCache();
   console.log(`Model: ${MODEL_METADATA.modelVersion} (${MODEL_METADATA.modelType}, ${MODEL_METADATA.calibrationMethod})`);
   console.log(`Backtest mode: ${BACKTEST_MODE}`);
   const allRows = [];
@@ -398,6 +491,16 @@ async function main() {
   console.table(summary);
   console.log("Transition diagnostics:");
   console.table(transitionDiagnostics);
+  await saveFetchCache();
+  console.log("Fetch cache:");
+  console.table({
+    cachePath: fetchCachePathAbs,
+    entries: fetchCache.byUrl.size,
+    hits: fetchCache.hits,
+    misses: fetchCache.misses,
+    writes: fetchCache.writes,
+    cacheOnly: BACKTEST_CACHE_ONLY,
+  });
 }
 
 main().catch((error) => {
