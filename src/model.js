@@ -7,7 +7,7 @@ export const MODEL_METADATA = {
     to: "2026-05-20",
   },
   featureSchemaHash: "ff-v8_1_3-memory-dynamic-blend-soft-calibration-20260521",
-  targetDefinition: "P(detectable_fruiting_presence_local_window_2_3d)",
+  targetDefinition: "P(harvestable_foraging_success_local_window_2_4d)",
   radiusKm: 50,
 };
 
@@ -66,8 +66,8 @@ export const SCORING_CONFIG = {
     horizonPenaltyMax: 0.13,
     sparseRegionalPenalty: 0.01,
     scoreTransform: {
-      center: 0.43,
-      slope: 4.8,
+      center: 0.41,
+      slope: 4.9,
       transformedWeight: 0.68,
       rawWeight: 0.32,
     },
@@ -144,6 +144,9 @@ export const CLIMATE_PRESETS = {
 
 const FACTOR_LABELS = {
   rainEventComponent: "Rain-event support",
+  harvestWindowComponent: "Harvest-window timing",
+  spoilagePenalty: "Spoilage pressure",
+  stalenessPenalty: "Staleness pressure",
   temperatureComponent: "Temperature suitability",
   dryingPenalty: "Drying penalty",
   coldPenalty: "Cold penalty",
@@ -316,6 +319,55 @@ function blendGuildScores({ guildScores, guildWeights, monthlyPriors }) {
   return blended;
 }
 
+function harvestTimingAndQualityFeatures({
+  dryDaysSinceMeaningfulRain,
+  rainMagnitudeClass,
+  meanTemp3,
+  vpd3,
+  rainHistory21d,
+  rainThresholds,
+}) {
+  const properRainByClass = rainMagnitudeClass === "medium" || rainMagnitudeClass === "heavy" || rainMagnitudeClass === "severe";
+  const recentRain8d = Array.from({ length: 8 }, (_, idx) => Math.max(0, rainHistory21d[idx] ?? 0));
+  const recentPeak8d = recentRain8d.reduce((max, value) => Math.max(max, value), 0);
+  const recentTotal8d = recentRain8d.reduce((sum, value) => sum + value, 0);
+  const properRainByRecentHistory = recentPeak8d >= (rainThresholds?.medium ?? 6) || recentTotal8d >= 14;
+  const properRain = properRainByClass || properRainByRecentHistory;
+  const eventStrength =
+    rainMagnitudeClass === "severe" ? 1
+    : rainMagnitudeClass === "heavy" ? 0.92
+    : rainMagnitudeClass === "medium" ? 0.78
+    : rainMagnitudeClass === "light" ? 0.45
+    : 0.15;
+
+  const lagPeak = Math.exp(-((dryDaysSinceMeaningfulRain - 3.1) ** 2) / (2 * 1.55 ** 2));
+  const lagRiseGate = scale(dryDaysSinceMeaningfulRain, 0.8, 2.2);
+  const lateDays = Math.max(0, dryDaysSinceMeaningfulRain - 4);
+  const lateDecay = properRain
+    ? Math.exp(-(0.12 + 0.24 * scale(vpd3, 0.85, 1.65)) * lateDays)
+    : Math.exp(-(0.42 + 0.5 * scale(vpd3, 0.85, 1.65)) * lateDays);
+  const lagTiming = clamp(lagPeak * (0.55 + 0.45 * lagRiseGate) * lateDecay, 0, 1);
+  const harvestWindowComponent = clamp(lagTiming * eventStrength, 0, 1);
+
+  const warmWetRisk = scale(meanTemp3, 17, 26) * (1 - scale(vpd3, 0.8, 1.8));
+  const spoilageAge = scale(dryDaysSinceMeaningfulRain, 3.2, 7.5);
+  const spoilagePenalty = clamp(warmWetRisk * spoilageAge, 0, 1);
+
+  const hotDryRisk = scale(meanTemp3, 20, 31) * scale(vpd3, 0.95, 1.85);
+  const staleAge = scale(dryDaysSinceMeaningfulRain, 2.6, 6.5);
+  const stalenessPenalty = clamp(hotDryRisk * staleAge, 0, 1);
+
+  return {
+    properRain,
+    properRainByRecentHistory,
+    recentPeak8d,
+    recentTotal8d,
+    harvestWindowComponent,
+    spoilagePenalty,
+    stalenessPenalty,
+  };
+}
+
 export function buildModelFeatures({ day, previousWindow, seasonScore, latitude }) {
   const currentRain = Number.isFinite(day.precipitation) ? Math.max(0, day.precipitation) : 0;
   const rainHistory21d = Array.isArray(previousWindow.rainHistory21d)
@@ -366,6 +418,14 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
     0,
     1,
   );
+  const harvestTiming = harvestTimingAndQualityFeatures({
+    dryDaysSinceMeaningfulRain,
+    rainMagnitudeClass,
+    meanTemp3,
+    vpd3,
+    rainHistory21d,
+    rainThresholds: SCORING_CONFIG.globalConfig.rainThresholdsMm,
+  });
 
   const guildScores = {};
   Object.entries(SCORING_CONFIG.guildConfigs).forEach(([guildKey, guildConfig]) => {
@@ -450,6 +510,9 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
     antecedentMoistureMemory: antecedentMemory.memorySignal,
     rainDaySuppression: rain5.oversatPenalty,
     dryingAdjustedTail: rainMoistureSignal * drydown.drydownCrashFactor,
+    harvestWindowComponent: harvestTiming.harvestWindowComponent,
+    spoilagePenalty: harvestTiming.spoilagePenalty,
+    stalenessPenalty: harvestTiming.stalenessPenalty,
     temperatureComponent: blended.temperatureComponent,
     dryingPenalty: blended.dryingPenalty,
     coldPenalty: blended.coldPenalty,
@@ -480,6 +543,13 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
       rainMemorySignal: antecedentMemory.memorySignal,
       memoryBlendWeight: dynamicMemoryWeight,
       rainMoistureSignal,
+      harvestWindowComponent: harvestTiming.harvestWindowComponent,
+      properRainForLateDecay: harvestTiming.properRain,
+      properRainByRecentHistory: harvestTiming.properRainByRecentHistory,
+      recentPeak8d: harvestTiming.recentPeak8d,
+      recentTotal8d: harvestTiming.recentTotal8d,
+      spoilagePenalty: harvestTiming.spoilagePenalty,
+      stalenessPenalty: harvestTiming.stalenessPenalty,
       dryDaysSinceMeaningfulRain,
       vpdDrynessState: drydown.vpdDrynessState,
       drydownCrashFactor: drydown.drydownCrashFactor,
@@ -492,11 +562,14 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
 
 export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStats }) {
   const rawEcologicalScore = clamp(
-    0.6 * (featureVector.rainEventComponent ?? 0) +
-      0.33 * (featureVector.temperatureComponent ?? 0) +
-      0.04 * (featureVector.seasonalComponent ?? 0) -
-      0.05 * (featureVector.dryingPenalty ?? 0) -
-      0.05 * (featureVector.coldPenalty ?? 0),
+    0.4 * (featureVector.rainEventComponent ?? 0) +
+      0.24 * (featureVector.temperatureComponent ?? 0) +
+      0.31 * (featureVector.harvestWindowComponent ?? 0) +
+      0.03 * (featureVector.seasonalComponent ?? 0) -
+      0.03 * (featureVector.dryingPenalty ?? 0) -
+      0.03 * (featureVector.coldPenalty ?? 0) -
+      0.08 * (featureVector.spoilagePenalty ?? 0) -
+      0.07 * (featureVector.stalenessPenalty ?? 0),
     0,
     1,
   );
@@ -514,9 +587,9 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
   const regionalPenalty = sparseRegional ? SCORING_CONFIG.globalConfig.sparseRegionalPenalty : 0;
 
   const warmRainSynergy = clamp(
-    0.12 * scale(featureVector.temperatureComponent ?? 0, 0.7, 1) * scale(featureVector.rainEventComponent ?? 0, 0.42, 1),
+    0.1 * scale(featureVector.temperatureComponent ?? 0, 0.68, 1) * scale(featureVector.rainEventComponent ?? 0, 0.4, 1),
     0,
-    0.12,
+    0.1,
   );
 
   const bounds = SCORING_CONFIG.globalConfig.scoreBounds;
@@ -534,6 +607,9 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
 
   const componentBreakdown = {
     rainEventComponent: featureVector.rainEventComponent ?? 0,
+    harvestWindowComponent: featureVector.harvestWindowComponent ?? 0,
+    spoilagePenalty: featureVector.spoilagePenalty ?? 0,
+    stalenessPenalty: featureVector.stalenessPenalty ?? 0,
     temperatureComponent: featureVector.temperatureComponent ?? 0,
     dryingPenalty: featureVector.dryingPenalty ?? 0,
     coldPenalty: featureVector.coldPenalty ?? 0,
@@ -543,11 +619,14 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
   };
 
   const signedFactors = [
-    { key: "rainEventComponent", impact: 0.52 * (featureVector.rainEventComponent ?? 0) },
-    { key: "temperatureComponent", impact: 0.31 * (featureVector.temperatureComponent ?? 0) },
-    { key: "seasonalComponent", impact: 0.04 * (featureVector.seasonalComponent ?? 0) },
-    { key: "dryingPenalty", impact: -0.07 * (featureVector.dryingPenalty ?? 0) },
-    { key: "coldPenalty", impact: -0.06 * (featureVector.coldPenalty ?? 0) },
+    { key: "rainEventComponent", impact: 0.42 * (featureVector.rainEventComponent ?? 0) },
+    { key: "temperatureComponent", impact: 0.25 * (featureVector.temperatureComponent ?? 0) },
+    { key: "harvestWindowComponent", impact: 0.23 * (featureVector.harvestWindowComponent ?? 0) },
+    { key: "seasonalComponent", impact: 0.03 * (featureVector.seasonalComponent ?? 0) },
+    { key: "dryingPenalty", impact: -0.03 * (featureVector.dryingPenalty ?? 0) },
+    { key: "coldPenalty", impact: -0.03 * (featureVector.coldPenalty ?? 0) },
+    { key: "spoilagePenalty", impact: -0.08 * (featureVector.spoilagePenalty ?? 0) },
+    { key: "stalenessPenalty", impact: -0.07 * (featureVector.stalenessPenalty ?? 0) },
   ];
 
   const topFactors = signedFactors
@@ -581,9 +660,9 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
 
 export function scoreToVerdict(probability) {
   const score = Math.round(clamp(probability, 0, 1) * 100);
-  if (score >= 80) return "Strong fruiting presence likely";
-  if (score >= 64) return "Fruiting presence likely";
-  if (score >= 47) return "Mixed fruiting presence signal";
-  if (score >= 32) return "Weak fruiting presence signal";
-  return "Low fruiting presence signal";
+  if (score >= 90) return "Exceptional day to find good mushrooms";
+  if (score >= 75) return "Strong chance of finding good mushrooms";
+  if (score >= 60) return "Decent chance of finding mushrooms";
+  if (score >= 40) return "Possible finds, but likely limited";
+  return "Sparse conditions, generally not recommended";
 }

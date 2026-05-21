@@ -240,23 +240,34 @@ function seasonScoreForDate(dateString, latitude) {
   return 24;
 }
 
-function buildReasons({ rainEventClass, rain5dResponse, crashPhase, dryingPenalty, avgTemp, nightlyMin }) {
+function buildReasons({
+  rainEventClass,
+  rain5dResponse,
+  crashPhase,
+  dryingPenalty,
+  harvestWindowComponent,
+  spoilagePenalty,
+  stalenessPenalty,
+  avgTemp,
+  nightlyMin,
+}) {
   const reasons = [];
-  if (rain5dResponse >= 0.62) reasons.push("Recent 5-day moisture support is strongly favorable.");
-  else if (rain5dResponse >= 0.4) reasons.push("Recent 5-day moisture support is moderate and still helpful.");
-  else if (rainEventClass === "none") reasons.push("No significant recent rain event is supporting fruiting.");
+  if (harvestWindowComponent >= 0.62) reasons.push("Timing looks favorable for finding harvestable mushrooms now.");
+  else if (harvestWindowComponent >= 0.42) reasons.push("Timing is decent, but likely outside the best harvest window.");
+  else reasons.push("Timing is likely early or late for peak harvestable mushrooms.");
+
+  if (rain5dResponse >= 0.62) reasons.push("Recent moisture strongly supports mushrooms in the woods.");
+  else if (rain5dResponse >= 0.4) reasons.push("Recent moisture support is moderate and still helpful.");
+  else if (rainEventClass === "none") reasons.push("No recent meaningful rain is supporting woodland mushrooms.");
   else reasons.push("Moisture support is present but limited.");
 
-  if (avgTemp >= 7 && avgTemp <= 24) reasons.push("Average temperature is favorable for active seasonal guilds.");
-  else if (avgTemp < 2) reasons.push("Only cold-tolerant guilds are likely to remain active.");
-  else if (avgTemp >= 30) reasons.push("Sustained heat can suppress many fruiting guilds.");
-  else reasons.push("Temperature is workable but not ideal for the dominant guild mix.");
+  if (spoilagePenalty >= 0.35) reasons.push("Warm, wet conditions may increase rot or insect pressure.");
+  else if (stalenessPenalty >= 0.35) reasons.push("Heat and drying can age mushrooms quickly.");
+  else if (dryingPenalty >= 0.12 || crashPhase === "crash") reasons.push("Drying conditions are reducing mushroom quality and persistence.");
 
-  if (dryingPenalty >= 0.1) reasons.push("Drying air and warmth are reducing moisture persistence.");
-  if (crashPhase === "crash") reasons.push("Dryness-phase transition is now reducing carryover from earlier rain.");
-
+  if (avgTemp >= 30) reasons.push("Sustained heat reduces odds of finding good-condition mushrooms.");
   if (nightlyMin < -1) reasons.push("Recent frost is a strong negative signal.");
-  else if (nightlyMin < 4) reasons.push("Cold nights reduce confidence.");
+  else if (nightlyMin < 4) reasons.push("Cold nights reduce near-term foraging confidence.");
 
   return reasons.slice(0, 3);
 }
@@ -805,6 +816,9 @@ function scoreDay(days, index, todayIndex) {
       rain5dResponse: featureBundle.diagnostics.rain5d_response,
       crashPhase: featureBundle.diagnostics.crashPhase,
       dryingPenalty: featureBundle.dryingPenalty,
+      harvestWindowComponent: featureBundle.harvestWindowComponent,
+      spoilagePenalty: featureBundle.spoilagePenalty,
+      stalenessPenalty: featureBundle.stalenessPenalty,
       avgTemp,
       nightlyMin,
     }),

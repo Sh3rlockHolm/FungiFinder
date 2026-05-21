@@ -7,6 +7,6 @@
     "to": "2026-05-20"
   },
   "featureSchemaHash": "ff-v8_1_3-memory-dynamic-blend-soft-calibration-20260521",
-  "targetDefinition": "P(detectable_fruiting_presence_local_window_2_3d)",
+  "targetDefinition": "P(harvestable_foraging_success_local_window_2_4d)",
   "radiusKm": 50
 }
