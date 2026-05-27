@@ -613,8 +613,10 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
   );
 
   const bounds = SCORING_CONFIG.globalConfig.scoreBounds;
+  const baseProbability = (calibratedEcologicalScore + warmRainSynergy) * (1 - horizonPenalty) - regionalPenalty;
+  const calibrationLift = 0.03;
   const adjustedProbability = clamp(
-    (calibratedEcologicalScore + warmRainSynergy) * (1 - horizonPenalty) - regionalPenalty,
+    baseProbability + calibrationLift,
     bounds.min,
     bounds.max,
   );

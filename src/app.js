@@ -478,26 +478,6 @@ function computePersonalMemorySignal(day) {
   };
 }
 
-function formatMemorySignal(memory) {
-  if (memory.memorySignal === "sparse") {
-    return `Sparse memory (${memory.memorySampleSize} check-ins in similar conditions)`;
-  }
-  const pct = Math.round((memory.favorableRate ?? 0) * 100);
-  if (memory.memorySignal === "weak") return `Weak match (${pct}% favorable, ${memory.memorySampleSize} check-ins)`;
-  if (memory.memorySignal === "moderate") return `Moderate match (${pct}% favorable, ${memory.memorySampleSize} check-ins)`;
-  return `Strong match (${pct}% favorable, ${memory.memorySampleSize} check-ins)`;
-}
-
-function formatMemorySignalBadge(memory) {
-  const lookup = {
-    sparse: "Sparse",
-    weak: "Weak",
-    moderate: "Moderate",
-    strong: "Strong",
-  };
-  return lookup[memory.memorySignal] ?? "Sparse";
-}
-
 function getBestForecastDate(scoredDays) {
   if (!Array.isArray(scoredDays) || !scoredDays.length) return null;
   let best = scoredDays[0];
@@ -506,6 +486,29 @@ function getBestForecastDate(scoredDays) {
     if ((day?.score ?? -1) > (best?.score ?? -1)) best = day;
   }
   return best?.date ?? null;
+}
+
+function goCallFromScore(score) {
+  if (!Number.isFinite(score)) return "--";
+  if (score >= 90) return "Excellent go day";
+  if (score >= 75) return "Strong go day";
+  if (score >= 60) return "Decent go day";
+  if (score >= 40) return "Borderline day";
+  return "Usually wait";
+}
+
+function moistureSignalLabel(moistureResponse) {
+  if (!Number.isFinite(moistureResponse)) return "--";
+  if (moistureResponse >= 0.62) return "Strong";
+  if (moistureResponse >= 0.4) return "Moderate";
+  return "Low";
+}
+
+function persistenceLabel({ dryDays, crashPhase }) {
+  if (!Number.isFinite(dryDays)) return "--";
+  if (crashPhase === "hold" && dryDays <= 2) return "Fresh window";
+  if (crashPhase === "taper" || dryDays <= 5) return "Aging window";
+  return "Declining window";
 }
 
 function getSeasonForDate(dateString, latitude) {
@@ -1397,7 +1400,16 @@ function setMobileTab(tab) {
 function renderSelectedDay() {
   const selectedDay = getSelectedDay();
   if (!selectedDay) return;
-  const memory = computePersonalMemorySignal(selectedDay);
+  const moistureResponse = Number.isFinite(selectedDay?.diagnostics?.rain5dResponse)
+    ? selectedDay.diagnostics.rain5dResponse
+    : Number.isFinite(selectedDay?.diagnostics?.rain5d_response)
+      ? selectedDay.diagnostics.rain5d_response
+      : null;
+  const dryDays = selectedDay?.diagnostics?.dryDaysSinceMeaningfulRain;
+  const crashPhase = selectedDay?.diagnostics?.crashPhase ?? null;
+  const goCall = goCallFromScore(selectedDay.score);
+  const moistureSignal = moistureSignalLabel(moistureResponse);
+  const persistence = persistenceLabel({ dryDays, crashPhase });
 
   const label = formatTimelineLabel(selectedDay.date);
   elements.summaryLabel.textContent = "Go timing confidence";
@@ -1405,19 +1417,21 @@ function renderSelectedDay() {
   elements.todayVerdict.textContent = selectedDay.verdict;
   elements.confidenceBadge.textContent = selectedDay.confidence;
   elements.analysisTitle.textContent = `${label} timing view`;
-  elements.analysisCopy.textContent = "Select a day to review weather fit and personal memory signal.";
+  elements.analysisCopy.textContent = "Select a day to see a simple go/no-go timing readout.";
   if (elements.seasonBadge) elements.seasonBadge.textContent = `${selectedDay.season} seasonal context`;
   elements.detailDateLabel.textContent = label;
   elements.detailScore.textContent = `${selectedDay.score}/100`;
   elements.detailVerdict.textContent = selectedDay.verdict;
   const isBestDay = selectedDay.date === getBestForecastDate(state.scoredDays);
-  elements.detailCopy.textContent = `${isBestDay ? "Best day in next 10 days. " : ""}Personal memory says: ${formatMemorySignal(memory)}. ${selectedDay.reasons.join(" ")}`;
+  const topReasons = (selectedDay.reasons ?? []).slice(0, 2).join(" ");
+  elements.detailCopy.textContent = `${isBestDay ? "Best day in next 10 days. " : ""}${topReasons}`;
   elements.detailMetrics.innerHTML = `
-    <p class="metric-method-note">Simple 3-day snapshot: temperature and humidity are min/avg/max, rain is total plus daily average.</p>
-    <div class="metric-pill"><span>Personal memory</span><strong>${formatMemorySignalBadge(memory)} | n=${memory.memorySampleSize}${Number.isFinite(memory.favorableRate) ? ` | ${Math.round(memory.favorableRate * 100)}% favorable` : ""}</strong></div>
+    <p class="metric-method-note">Simple readout: go call, moisture signal, persistence, and recent weather context.</p>
+    <div class="metric-pill"><span>Go call</span><strong>${goCall}</strong></div>
+    <div class="metric-pill"><span>Moisture signal</span><strong>${moistureSignal}</strong></div>
+    <div class="metric-pill"><span>Persistence</span><strong>${persistence}</strong></div>
     <div class="metric-pill"><span>Temp (3d)</span><strong>${Number.isFinite(selectedDay.tempMin3d) ? selectedDay.tempMin3d.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.tempAvg3d) ? selectedDay.tempAvg3d.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.tempMax3d) ? selectedDay.tempMax3d.toFixed(1) : "--"}&deg;C</strong></div>
-    <div class="metric-pill"><span>Rain (3d)</span><strong>${Number.isFinite(selectedDay.rainTotal3d) ? selectedDay.rainTotal3d.toFixed(1) : "--"} mm total | ${Number.isFinite(selectedDay.rainAvg3d) ? selectedDay.rainAvg3d.toFixed(1) : "--"} mm/day</strong></div>
-    <div class="metric-pill"><span>Humidity (3d)</span><strong>${Number.isFinite(selectedDay.humidityMin3d) ? selectedDay.humidityMin3d.toFixed(0) : "--"} / ${Number.isFinite(selectedDay.humidityAvg3d) ? selectedDay.humidityAvg3d.toFixed(0) : "--"} / ${Number.isFinite(selectedDay.humidityMax3d) ? selectedDay.humidityMax3d.toFixed(0) : "--"} %</strong></div>
+    <div class="metric-pill"><span>Humidity max (3d)</span><strong>${Number.isFinite(selectedDay.humidityMax3d) ? selectedDay.humidityMax3d.toFixed(0) : "--"} %</strong></div>
   `;
   renderFeedbackUI();
   renderRegionalStats();
@@ -1558,7 +1572,7 @@ async function analyzeLocation(location, shouldMoveMap = true) {
     const days = normalizeWeather(payload);
     const todayIndex = findTodayIndex(days);
     state.allDays = scoreAllDays(days, todayIndex);
-    const forecastStart = Math.min(state.allDays.length, todayIndex + 1);
+    const forecastStart = Math.min(state.allDays.length, todayIndex);
     state.scoredDays = state.allDays.slice(forecastStart, forecastStart + FORECAST_WINDOW_DAYS);
     if (!state.scoredDays.length) {
       state.scoredDays = state.allDays.slice(todayIndex, todayIndex + FORECAST_WINDOW_DAYS);

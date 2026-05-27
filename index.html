@@ -56,6 +56,31 @@
           <span class="confidence-pill" id="confidenceBadge">Confidence</span>
         </div>
 
+        <section class="feedback-panel" aria-label="Foraging feedback">
+          <p class="eyebrow">Field check-ins (future model tuning only)</p>
+          <h5>What did this trip yield?</h5>
+          <p class="analysis-copy">Check-ins are stored for future calibration and do not change current go timing confidence.</p>
+          <label class="feedback-duration">
+            Trip duration
+            <select id="tripDurationSelect" aria-label="Trip duration">
+              <option value="short">Short</option>
+              <option value="medium" selected>Medium</option>
+              <option value="long">Long</option>
+            </select>
+          </label>
+          <div class="feedback-options" id="feedbackOptions">
+            <button type="button" class="ghost-button feedback-option" data-feedback-value="Not at all">Not at all</button>
+            <button type="button" class="ghost-button feedback-option" data-feedback-value="One or Two">One or Two</button>
+            <button type="button" class="ghost-button feedback-option" data-feedback-value="Several">Several</button>
+            <button type="button" class="ghost-button feedback-option" data-feedback-value="A ton!">A ton!</button>
+          </div>
+          <p class="feedback-status" id="feedbackStatus">No feedback logged for this day yet.</p>
+          <div class="feedback-actions">
+            <button type="button" class="ghost-button" id="exportFeedbackButton">Copy feedback log</button>
+            <button type="button" class="ghost-button" id="clearFeedbackButton">Clear log</button>
+          </div>
+        </section>
+
       </section>
 
       <section class="map-pane" aria-label="Map and daily prognosis">
@@ -129,29 +154,6 @@
                 <p class="detail-copy" id="detailCopy">
                   The highlighted day explains how general growing conditions line up at that point in the timeline.
                 </p>
-                <section class="feedback-panel" aria-label="Foraging feedback">
-                  <p class="eyebrow">Field feedback</p>
-                  <h5>What did this trip yield?</h5>
-                  <label class="feedback-duration">
-                    Trip duration
-                    <select id="tripDurationSelect" aria-label="Trip duration">
-                      <option value="short">Short</option>
-                      <option value="medium" selected>Medium</option>
-                      <option value="long">Long</option>
-                    </select>
-                  </label>
-                  <div class="feedback-options" id="feedbackOptions">
-                    <button type="button" class="ghost-button feedback-option" data-feedback-value="Not at all">Not at all</button>
-                    <button type="button" class="ghost-button feedback-option" data-feedback-value="One or Two">One or Two</button>
-                    <button type="button" class="ghost-button feedback-option" data-feedback-value="Several">Several</button>
-                    <button type="button" class="ghost-button feedback-option" data-feedback-value="A ton!">A ton!</button>
-                  </div>
-                  <p class="feedback-status" id="feedbackStatus">No feedback logged for this day yet.</p>
-                  <div class="feedback-actions">
-                    <button type="button" class="ghost-button" id="exportFeedbackButton">Copy feedback log</button>
-                    <button type="button" class="ghost-button" id="clearFeedbackButton">Clear log</button>
-                  </div>
-                </section>
               </section>
             </section>
             <section class="mobile-section" id="mobileExamplesSection">

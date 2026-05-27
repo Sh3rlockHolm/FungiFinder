@@ -803,6 +803,11 @@ dd {
   border-top: 1px solid var(--line);
 }
 
+.control-pane .feedback-panel {
+  margin-top: 0.95rem;
+  border-top: 1px solid var(--line);
+}
+
 .feedback-panel h5 {
   margin: 0.25rem 0 0.6rem;
   font-size: 0.95rem;
