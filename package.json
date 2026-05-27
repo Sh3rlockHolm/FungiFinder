@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "backtest": "node ./scripts/backtest.mjs",
-    "backtest:quick": "set BACKTEST_MODE=quick&& node ./scripts/backtest.mjs"
+    "backtest:quick": "set BACKTEST_MODE=quick&& node ./scripts/backtest.mjs",
+    "calibrate:decay": "node ./scripts/calibrate-decay.mjs"
   }
 }

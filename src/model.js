@@ -1,12 +1,12 @@
 export const MODEL_METADATA = {
-  modelVersion: "v8.1.3",
+  modelVersion: "v8.1.5",
   modelType: "guild_mixture_rain5d_model",
   calibrationMethod: "bounded_guild_blend_rain5d",
   trainedWindow: {
     from: "2024-01-01",
     to: "2026-05-20",
   },
-  featureSchemaHash: "ff-v8_1_3-memory-dynamic-blend-soft-calibration-20260521",
+  featureSchemaHash: "ff-v8_1_5-stable-postpeak-tail-20260527",
   targetDefinition: "P(harvestable_foraging_success_local_window_2_4d)",
   radiusKm: 50,
 };
@@ -60,14 +60,14 @@ export const SCORING_CONFIG = {
         heavy: 4,
         severe: 5,
       },
-      minFactor: 0.1,
+      minFactor: 0.22,
     },
     scoreBounds: { min: 0.06, max: 0.97 },
     horizonPenaltyMax: 0.13,
     sparseRegionalPenalty: 0.01,
     scoreTransform: {
-      center: 0.41,
-      slope: 4.9,
+      center: 0.39,
+      slope: 4.8,
       transformedWeight: 0.68,
       rawWeight: 0.32,
     },
@@ -162,6 +162,25 @@ function scale(value, low, high) {
   if (high === low) return 0;
   return clamp((value - low) / (high - low), 0, 1);
 }
+
+export function applyBiologicalPersistence({
+  previousProbability,
+  currentProbability,
+  drydownCrashFactor,
+  vpd3,
+  dryDaysSinceMeaningfulRain,
+}) {
+  if (!Number.isFinite(previousProbability) || !Number.isFinite(currentProbability)) return currentProbability;
+  const dryness = 1 - clamp(Number.isFinite(drydownCrashFactor) ? drydownCrashFactor : 0.6, 0, 1);
+  const vpdStress = scale(vpd3, 0.9, 1.8);
+  const dryDaysStress = scale(dryDaysSinceMeaningfulRain, 2, 8);
+  const persistenceWeight = clamp(0.66 - 0.42 * dryness - 0.14 * vpdStress, 0.18, 0.66);
+  const blended = persistenceWeight * previousProbability + (1 - persistenceWeight) * currentProbability;
+  const maxAllowedDrop = 0.04 + 0.08 * dryness + 0.05 * vpdStress + 0.05 * dryDaysStress;
+  const minAllowedProbability = previousProbability - maxAllowedDrop;
+  return clamp(Math.max(blended, minAllowedProbability), 0, 1);
+}
+
 
 function centeredScale(value, low, bestLow, bestHigh, high) {
   if (!Number.isFinite(value)) return 0;
@@ -286,7 +305,8 @@ function hybridDrydownCrash({ dryDaysSinceMeaningfulRain, vpd3, rainMagnitudeCla
   }
 
   const late = dryDaysSinceMeaningfulRain - crashStart;
-  const decayRate = 0.35 + 0.45 * vpdSoft;
+  // Keep post-peak decline realistic: fruiting opportunity should taper, not collapse overnight.
+  const decayRate = 0.14 + 0.22 * vpdSoft;
   const factor = (1 - 0.16 * (0.5 + 0.5 * vpdSoft)) * Math.exp(-decayRate * late);
   return { drydownCrashFactor: clamp(factor, drydownConfig.minFactor, 1), vpdDrynessState: vpdSoft, crashPhase: "crash" };
 }
@@ -344,8 +364,8 @@ function harvestTimingAndQualityFeatures({
   const lagRiseGate = scale(dryDaysSinceMeaningfulRain, 0.8, 2.2);
   const lateDays = Math.max(0, dryDaysSinceMeaningfulRain - 4);
   const lateDecay = properRain
-    ? Math.exp(-(0.12 + 0.24 * scale(vpd3, 0.85, 1.65)) * lateDays)
-    : Math.exp(-(0.42 + 0.5 * scale(vpd3, 0.85, 1.65)) * lateDays);
+    ? Math.exp(-(0.07 + 0.16 * scale(vpd3, 0.85, 1.65)) * lateDays)
+    : Math.exp(-(0.28 + 0.34 * scale(vpd3, 0.85, 1.65)) * lateDays);
   const lagTiming = clamp(lagPeak * (0.55 + 0.45 * lagRiseGate) * lateDecay, 0, 1);
   const harvestWindowComponent = clamp(lagTiming * eventStrength, 0, 1);
 
@@ -562,14 +582,14 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
 
 export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStats }) {
   const rawEcologicalScore = clamp(
-    0.4 * (featureVector.rainEventComponent ?? 0) +
-      0.24 * (featureVector.temperatureComponent ?? 0) +
-      0.31 * (featureVector.harvestWindowComponent ?? 0) +
+    0.41 * (featureVector.rainEventComponent ?? 0) +
+      0.23 * (featureVector.temperatureComponent ?? 0) +
+      0.34 * (featureVector.harvestWindowComponent ?? 0) +
       0.03 * (featureVector.seasonalComponent ?? 0) -
-      0.03 * (featureVector.dryingPenalty ?? 0) -
-      0.03 * (featureVector.coldPenalty ?? 0) -
-      0.08 * (featureVector.spoilagePenalty ?? 0) -
-      0.07 * (featureVector.stalenessPenalty ?? 0),
+      0.025 * (featureVector.dryingPenalty ?? 0) -
+      0.025 * (featureVector.coldPenalty ?? 0) -
+      0.075 * (featureVector.spoilagePenalty ?? 0) -
+      0.065 * (featureVector.stalenessPenalty ?? 0),
     0,
     1,
   );

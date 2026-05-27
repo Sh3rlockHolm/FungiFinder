@@ -551,12 +551,21 @@ dd {
 
 .day-chip span {
   font-size: 0.72rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .day-chip strong {
   color: var(--ink);
   font-size: 0.9rem;
   font-weight: 600;
+}
+
+.day-chip-medal {
+  margin-left: 4px;
+  font-size: 0.8rem;
+  vertical-align: middle;
 }
 
 .day-chip.is-active {
@@ -697,6 +706,18 @@ dd {
   fill: rgba(75, 120, 144, 0.88);
 }
 
+.combined-bar.best-day {
+  stroke: rgba(183, 134, 11, 0.95);
+  stroke-width: 1.5;
+}
+
+.best-day-medal {
+  font-size: 14px;
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.85);
+  stroke-width: 2px;
+}
+
 .combined-line-min,
 .combined-line-avg,
 .combined-line-max {
@@ -774,6 +795,60 @@ dd {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
+}
+
+.feedback-panel {
+  margin-top: 0.9rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--line);
+}
+
+.feedback-panel h5 {
+  margin: 0.25rem 0 0.6rem;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.feedback-options {
+  display: grid;
+  gap: 0.45rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.feedback-duration {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0.25rem 0 0.6rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.feedback-duration select {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.3rem 0.5rem;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+}
+
+.feedback-option.is-selected {
+  border-color: color-mix(in srgb, var(--moss) 55%, var(--line));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--moss) 45%, transparent);
+  background: color-mix(in srgb, var(--moss) 9%, white);
+}
+
+.feedback-status {
+  margin-top: 0.6rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.feedback-actions {
+  margin-top: 0.55rem;
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
 }
 
 .regional-grid,
@@ -1230,5 +1305,14 @@ dd {
 
   .day-chip {
     min-width: 70px;
+  }
+
+  .day-chip-medal {
+    font-size: 0.72rem;
+    margin-left: 2px;
+  }
+
+  .best-day-medal {
+    font-size: 12px;
   }
 }

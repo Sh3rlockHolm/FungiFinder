@@ -1,4 +1,4 @@
-import { MODEL_METADATA, buildModelFeatures, inferFruitingSignal, scoreToVerdict } from "./model.js";
+import { MODEL_METADATA, SCORING_CONFIG, applyBiologicalPersistence, buildModelFeatures, inferFruitingSignal, scoreToVerdict } from "./model.js";
 
 const state = {
   allDays: [],
@@ -18,6 +18,34 @@ const state = {
   suggestions: [],
   chartLayout: null,
   touchStartX: null,
+  feedbackLog: [],
+};
+
+const FEEDBACK_STORAGE_KEY = "fungifinder_feedback_log_v1";
+const FEEDBACK_PENDING_STORAGE_KEY = "fungifinder_feedback_pending_v1";
+const FEEDBACK_OPTIONS = ["Not at all", "One or Two", "Several", "A ton!"];
+const FAVORABLE_FEEDBACK_OPTIONS = new Set(["Several", "A ton!"]);
+const TRIP_DURATION_OPTIONS = new Set(["short", "medium", "long"]);
+const REMOTE_FEEDBACK_ENDPOINT = window.FUNGI_FEEDBACK_ENDPOINT || "";
+const REMOTE_FEEDBACK_API_KEY = window.FUNGI_FEEDBACK_API_KEY || "";
+const REMOTE_FEEDBACK_API_KEY_HEADER = window.FUNGI_FEEDBACK_API_KEY_HEADER || "x-api-key";
+const FEEDBACK_SCORE_CURVE = {
+  "Not at all": { min: 0, max: 39, midpoint: 20 },
+  "One or Two": { min: 40, max: 59, midpoint: 50 },
+  Several: { min: 60, max: 79, midpoint: 70 },
+  "A ton!": { min: 80, max: 100, midpoint: 90 },
+};
+const FORECAST_WINDOW_DAYS = 10;
+const RAIN_AXIS_BASE_CAP_MM = 40;
+const RAIN_AXIS_STEP_MM = 10;
+const LOCKED_RAIN_BANDS = {
+  lightMax: 10,
+  mediumMax: 25,
+  heavyMax: 40,
+};
+const HUMIDITY_CLASS_THRESHOLDS = {
+  lowMax: 59,
+  mediumMax: 79,
 };
 
 const elements = {
@@ -56,7 +84,192 @@ const elements = {
   todayScore: document.querySelector("#todayScore"),
   todayVerdict: document.querySelector("#todayVerdict"),
   useLocationButton: document.querySelector("#useLocationButton"),
+  feedbackOptions: document.querySelector("#feedbackOptions"),
+  feedbackStatus: document.querySelector("#feedbackStatus"),
+  tripDurationSelect: document.querySelector("#tripDurationSelect"),
+  exportFeedbackButton: document.querySelector("#exportFeedbackButton"),
+  clearFeedbackButton: document.querySelector("#clearFeedbackButton"),
 };
+
+function loadFeedbackLog() {
+  try {
+    const raw = localStorage.getItem(FEEDBACK_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === "object") return Object.values(parsed);
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+function loadPendingFeedbackQueue() {
+  try {
+    const raw = localStorage.getItem(FEEDBACK_PENDING_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePendingFeedbackQueue(queue) {
+  try {
+    localStorage.setItem(FEEDBACK_PENDING_STORAGE_KEY, JSON.stringify(queue));
+  } catch (error) {
+    console.error("Failed to save feedback pending queue", error);
+  }
+}
+
+function saveFeedbackLog() {
+  try {
+    localStorage.setItem(FEEDBACK_STORAGE_KEY, JSON.stringify(state.feedbackLog));
+  } catch (error) {
+    console.error("Failed to save feedback log", error);
+  }
+}
+
+function buildRemoteHeaders() {
+  const headers = { "Content-Type": "application/json" };
+  if (REMOTE_FEEDBACK_ENDPOINT && REMOTE_FEEDBACK_API_KEY) headers[REMOTE_FEEDBACK_API_KEY_HEADER] = REMOTE_FEEDBACK_API_KEY;
+  return headers;
+}
+
+async function pushFeedbackEntryRemote(entry) {
+  if (!REMOTE_FEEDBACK_ENDPOINT) return false;
+  const response = await fetch(REMOTE_FEEDBACK_ENDPOINT, {
+    method: "POST",
+    headers: buildRemoteHeaders(),
+    body: JSON.stringify(entry),
+  });
+  return response.ok;
+}
+
+function queueFeedbackForRemoteSync(entry) {
+  const pending = loadPendingFeedbackQueue();
+  pending.push(entry);
+  savePendingFeedbackQueue(pending);
+}
+
+async function flushPendingFeedbackQueue() {
+  if (!REMOTE_FEEDBACK_ENDPOINT) return;
+  const pending = loadPendingFeedbackQueue();
+  if (!pending.length) return;
+  const next = [];
+  for (const entry of pending) {
+    try {
+      const ok = await pushFeedbackEntryRemote(entry);
+      if (!ok) next.push(entry);
+    } catch {
+      next.push(entry);
+    }
+  }
+  savePendingFeedbackQueue(next);
+}
+
+function selectedFeedbackEntry() {
+  const day = getSelectedDay();
+  if (!day || !state.selected) return null;
+  const lat = state.selected.latitude.toFixed(4);
+  const lon = state.selected.longitude.toFixed(4);
+  const matches = state.feedbackLog.filter((entry) => entry.date === day.date && entry.latitude?.toFixed?.(4) === lat && entry.longitude?.toFixed?.(4) === lon);
+  if (!matches.length) return null;
+  return matches.sort((a, b) => (a.loggedAt < b.loggedAt ? 1 : -1))[0];
+}
+
+function renderFeedbackUI() {
+  if (!elements.feedbackOptions || !elements.feedbackStatus) return;
+  const current = selectedFeedbackEntry();
+  elements.feedbackOptions.querySelectorAll("[data-feedback-value]").forEach((button) => {
+    const value = button.dataset.feedbackValue ?? "";
+    const selected = current?.response === value;
+    button.classList.toggle("is-selected", selected);
+    button.setAttribute("aria-pressed", selected ? "true" : "false");
+  });
+  if (elements.tripDurationSelect) {
+    const selectedDuration = current?.tripDuration && TRIP_DURATION_OPTIONS.has(current.tripDuration) ? current.tripDuration : "medium";
+    elements.tripDurationSelect.value = selectedDuration;
+  }
+  const pendingCount = loadPendingFeedbackQueue().length;
+  const remoteSuffix = REMOTE_FEEDBACK_ENDPOINT
+    ? ` Remote queue: ${pendingCount}.`
+    : " Remote endpoint not configured (local log only).";
+  if (!current) {
+    elements.feedbackStatus.textContent = `No check-in logged for this day yet. Total check-ins: ${state.feedbackLog.length}.${remoteSuffix}`;
+    return;
+  }
+  const when = current.loggedAt ? new Date(current.loggedAt).toLocaleString() : "Unknown time";
+  const durationText = current.tripDuration ? ` | Duration: ${current.tripDuration}` : "";
+  const deltaText = Number.isFinite(current.scoreDeltaFromFeedbackCurve)
+    ? ` | Score vs feedback curve: ${current.scoreDeltaFromFeedbackCurve >= 0 ? "+" : ""}${current.scoreDeltaFromFeedbackCurve}`
+    : "";
+  elements.feedbackStatus.textContent =
+    `Saved for this day and location: ${current.response}${durationText} (${when}). Total check-ins: ${state.feedbackLog.length}.${deltaText}.${remoteSuffix}`;
+}
+
+function logFeedback(response) {
+  if (!FEEDBACK_OPTIONS.includes(response)) return;
+  const day = getSelectedDay();
+  if (!day || !state.selected) return;
+  const memory = computePersonalMemorySignal(day);
+  const tripDuration = TRIP_DURATION_OPTIONS.has(elements.tripDurationSelect?.value ?? "") ? elements.tripDurationSelect.value : "medium";
+  const curve = FEEDBACK_SCORE_CURVE[response] ?? { min: 0, max: 100, midpoint: 50 };
+  const scoreDeltaFromFeedbackCurve = Math.round(day.score - curve.midpoint);
+  const entry = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    response,
+    expectedScoreMin: curve.min,
+    expectedScoreMax: curve.max,
+    expectedScoreMidpoint: curve.midpoint,
+    scoreDeltaFromFeedbackCurve,
+    date: day.date,
+    score: day.score,
+    probability: day.probability,
+    verdict: day.verdict,
+    locationLabel: state.selected.label,
+    latitude: state.selected.latitude,
+    longitude: state.selected.longitude,
+    tripDuration,
+    memoryMonth: memory.memoryMonth,
+    memoryRainClass: memory.memoryRainClass,
+    memoryHumidityClass: memory.memoryHumidityClass,
+    loggedAt: new Date().toISOString(),
+    appModelVersion: MODEL_METADATA.modelVersion,
+    appTargetDefinition: MODEL_METADATA.targetDefinition,
+    userAgent: navigator.userAgent,
+  };
+  state.feedbackLog.push(entry);
+  queueFeedbackForRemoteSync(entry);
+  saveFeedbackLog();
+  renderFeedbackUI();
+  flushPendingFeedbackQueue().then(() => renderFeedbackUI());
+}
+
+async function copyFeedbackLogToClipboard() {
+  const entries = [...state.feedbackLog].sort((a, b) => (a.loggedAt < b.loggedAt ? -1 : 1));
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    count: entries.length,
+    entries,
+  };
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+    if (elements.feedbackStatus) elements.feedbackStatus.textContent = `Copied ${entries.length} feedback entries to clipboard.`;
+  } catch (error) {
+    console.error("Clipboard copy failed", error);
+    if (elements.feedbackStatus) elements.feedbackStatus.textContent = "Could not copy feedback log. Clipboard permission may be blocked.";
+  }
+}
+
+function clearFeedbackLog() {
+  state.feedbackLog = [];
+  saveFeedbackLog();
+  savePendingFeedbackQueue([]);
+  renderFeedbackUI();
+  if (elements.feedbackStatus) elements.feedbackStatus.textContent = "Feedback log cleared.";
+}
 
 const dayFormatter = new Intl.DateTimeFormat(undefined, {
   day: "numeric",
@@ -85,6 +298,16 @@ function sum(values) {
 function mean(values) {
   const valid = values.filter(Number.isFinite);
   return valid.length ? sum(valid) / valid.length : 0;
+}
+
+function minOrNull(values) {
+  const valid = values.filter(Number.isFinite);
+  return valid.length ? Math.min(...valid) : null;
+}
+
+function maxOrNull(values) {
+  const valid = values.filter(Number.isFinite);
+  return valid.length ? Math.max(...valid) : null;
 }
 
 function weightedMean(values, weights) {
@@ -185,32 +408,104 @@ function formatShortDate(dateString) {
   return shortDateFormatter.format(new Date(`${dateString}T12:00:00`));
 }
 
-function buildRainIntensityBands(rainValues) {
-  const nonZero = rainValues
-    .filter((value) => Number.isFinite(value) && value > 0)
-    .sort((a, b) => a - b);
-  if (!nonZero.length) {
-    return {
-      lightMax: 0,
-      mediumMax: 0,
-      heavyMin: 0,
-      descriptor: "No rain in timeline",
-    };
-  }
-  const quantileAt = (q) => {
-    const position = Math.max(0, Math.min(nonZero.length - 1, Math.floor((nonZero.length - 1) * q)));
-    return nonZero[position];
-  };
-  const lightMax = quantileAt(0.5);
-  const mediumMax = Math.max(lightMax, quantileAt(0.85));
-  const heavyMin = mediumMax;
-  const toMm = (value) => `${value.toFixed(1)} mm`;
+function buildRainIntensityBands() {
+  const { lightMax, mediumMax, heavyMax } = LOCKED_RAIN_BANDS;
+  const toMm = (value) => `${value.toFixed(0)} mm`;
   return {
     lightMax,
     mediumMax,
-    heavyMin,
-    descriptor: `Light <= ${toMm(lightMax)} | Medium <= ${toMm(mediumMax)} | Heavy > ${toMm(heavyMin)}`,
+    heavyMax,
+    descriptor: `Light <= ${toMm(lightMax)} | Medium <= ${toMm(mediumMax)} | Heavy <= ${toMm(heavyMax)} | Extreme > ${toMm(heavyMax)}`,
   };
+}
+
+function computeRainAxisTop(rainMax) {
+  if (!Number.isFinite(rainMax) || rainMax <= RAIN_AXIS_BASE_CAP_MM) return RAIN_AXIS_BASE_CAP_MM;
+  const nextCap = roundUpToStep(rainMax, RAIN_AXIS_STEP_MM);
+  return Math.max(RAIN_AXIS_BASE_CAP_MM + RAIN_AXIS_STEP_MM, nextCap);
+}
+
+function classifyRainForMemory(rainMm) {
+  const value = Number.isFinite(rainMm) ? Math.max(0, rainMm) : 0;
+  if (value <= LOCKED_RAIN_BANDS.lightMax) return "light";
+  if (value <= LOCKED_RAIN_BANDS.mediumMax) return "medium";
+  if (value <= LOCKED_RAIN_BANDS.heavyMax) return "heavy";
+  return "extreme";
+}
+
+function classifyHumidityForMemory(humidityPercent) {
+  const value = Number.isFinite(humidityPercent) ? humidityPercent : null;
+  if (value === null) return "unknown";
+  if (value <= HUMIDITY_CLASS_THRESHOLDS.lowMax) return "low";
+  if (value <= HUMIDITY_CLASS_THRESHOLDS.mediumMax) return "medium";
+  return "high";
+}
+
+function buildMemoryKeyFromDay(day) {
+  const memoryMonth = new Date(`${day.date}T12:00:00`).getUTCMonth() + 1;
+  const memoryRainClass = classifyRainForMemory(day.rainTotal3d);
+  const memoryHumidityClass = classifyHumidityForMemory(day.humidityAvg3d);
+  return {
+    memoryMonth,
+    memoryRainClass,
+    memoryHumidityClass,
+    key: `${memoryMonth}|${memoryRainClass}|${memoryHumidityClass}`,
+  };
+}
+
+function computePersonalMemorySignal(day) {
+  const targetKey = buildMemoryKeyFromDay(day);
+  const matching = state.feedbackLog.filter((entry) => {
+    const month = Number.parseInt(entry.memoryMonth, 10);
+    const rainClass = entry.memoryRainClass;
+    const humidityClass = entry.memoryHumidityClass;
+    if (!Number.isFinite(month) || !rainClass || !humidityClass) return false;
+    return month === targetKey.memoryMonth && rainClass === targetKey.memoryRainClass && humidityClass === targetKey.memoryHumidityClass;
+  });
+  const memorySampleSize = matching.length;
+  const favorableCount = matching.filter((entry) => FAVORABLE_FEEDBACK_OPTIONS.has(entry.response)).length;
+  const favorableRate = memorySampleSize > 0 ? favorableCount / memorySampleSize : null;
+  let memorySignal = "sparse";
+  if (memorySampleSize < 3 || favorableRate === null) memorySignal = "sparse";
+  else if (favorableRate < 0.35) memorySignal = "weak";
+  else if (favorableRate < 0.65) memorySignal = "moderate";
+  else memorySignal = "strong";
+  return {
+    ...targetKey,
+    memorySampleSize,
+    favorableRate,
+    memorySignal,
+  };
+}
+
+function formatMemorySignal(memory) {
+  if (memory.memorySignal === "sparse") {
+    return `Sparse memory (${memory.memorySampleSize} check-ins in similar conditions)`;
+  }
+  const pct = Math.round((memory.favorableRate ?? 0) * 100);
+  if (memory.memorySignal === "weak") return `Weak match (${pct}% favorable, ${memory.memorySampleSize} check-ins)`;
+  if (memory.memorySignal === "moderate") return `Moderate match (${pct}% favorable, ${memory.memorySampleSize} check-ins)`;
+  return `Strong match (${pct}% favorable, ${memory.memorySampleSize} check-ins)`;
+}
+
+function formatMemorySignalBadge(memory) {
+  const lookup = {
+    sparse: "Sparse",
+    weak: "Weak",
+    moderate: "Moderate",
+    strong: "Strong",
+  };
+  return lookup[memory.memorySignal] ?? "Sparse";
+}
+
+function getBestForecastDate(scoredDays) {
+  if (!Array.isArray(scoredDays) || !scoredDays.length) return null;
+  let best = scoredDays[0];
+  for (let index = 1; index < scoredDays.length; index += 1) {
+    const day = scoredDays[index];
+    if ((day?.score ?? -1) > (best?.score ?? -1)) best = day;
+  }
+  return best?.date ?? null;
 }
 
 function getSeasonForDate(dateString, latitude) {
@@ -746,11 +1041,14 @@ function scoreDay(days, index, todayIndex) {
   const rain2dAgo = day2Ago?.precipitation ?? 0;
   const rain3dAgo = day3Ago?.precipitation ?? 0;
   const rainLast3d = sum(threeDayWindow.map((day) => day.precipitation));
-  const weightedTemp72hMin = weightedMeanOrNull([day1Ago?.minTemp, day2Ago?.minTemp, day3Ago?.minTemp], [0.2, 0.5, 0.3]);
-  const weightedTemp72hAvg = weightedMeanOrNull([day1Ago?.meanTemp, day2Ago?.meanTemp, day3Ago?.meanTemp], [0.2, 0.5, 0.3]);
-  const weightedTemp72hMax = weightedMeanOrNull([day1Ago?.maxTemp, day2Ago?.maxTemp, day3Ago?.maxTemp], [0.2, 0.5, 0.3]);
-  const rain3dTotal = rainLast3d;
-  const humidity72hAvg = weightedMeanOrNull([day1Ago?.rhMean, day2Ago?.rhMean, day3Ago?.rhMean], [0.2, 0.5, 0.3]);
+  const tempMin3d = minOrNull(threeDayWindow.map((day) => day.minTemp));
+  const tempAvg3d = mean(threeDayWindow.map((day) => day.meanTemp));
+  const tempMax3d = maxOrNull(threeDayWindow.map((day) => day.maxTemp));
+  const rainTotal3d = rainLast3d;
+  const rainAvg3d = rainTotal3d / Math.max(1, threeDayWindow.length);
+  const humidityMin3d = minOrNull(threeDayWindow.map((day) => day.rhMean));
+  const humidityAvg3d = mean(threeDayWindow.map((day) => day.rhMean));
+  const humidityMax3d = maxOrNull(threeDayWindow.map((day) => day.rhMean));
   const avgTemp = mean(threeDayWindow.map((day) => day.meanTemp));
   const nightlyMin = Math.min(...threeDayWindow.map((day) => day.minTemp));
   const diurnalRange = mean(threeDayWindow.map((day) => day.maxTemp - day.minTemp));
@@ -802,11 +1100,14 @@ function scoreDay(days, index, todayIndex) {
     rain1dAgo,
     rain2dAgo,
     rain3dAgo,
-    weightedTemp72hMin,
-    weightedTemp72hAvg,
-    weightedTemp72hMax,
-    weightedRain72h: rain3dTotal,
-    humidity72hAvg,
+    tempMin3d,
+    tempAvg3d,
+    tempMax3d,
+    rainTotal3d,
+    rainAvg3d,
+    humidityMin3d,
+    humidityAvg3d,
+    humidityMax3d,
     probability: modelInference.probability,
     score: clamp(score, 0, 100),
     season,
@@ -829,6 +1130,23 @@ function scoreAllDays(days, todayIndex) {
   const scored = [];
   for (let index = 0; index < days.length; index += 1) {
     const scoredDay = scoreDay(days, index, todayIndex);
+    if (scored.length > 0) {
+      const previous = scored[scored.length - 1];
+      const persistedProbability = applyBiologicalPersistence({
+        previousProbability: previous.probability,
+        currentProbability: scoredDay.probability,
+        drydownCrashFactor: scoredDay?.diagnostics?.drydownCrashFactor,
+        vpd3: scoredDay?.diagnostics?.vpd3,
+        dryDaysSinceMeaningfulRain: scoredDay?.diagnostics?.dryDaysSinceMeaningfulRain,
+      });
+      scoredDay.probability = persistedProbability;
+      scoredDay.score = Math.round(clamp(persistedProbability * 100, 0, 100));
+      scoredDay.verdict = scoreToVerdict(persistedProbability);
+      scoredDay.diagnostics = {
+        ...(scoredDay.diagnostics ?? {}),
+        persistenceAdjusted: true,
+      };
+    }
     scored.push(scoredDay);
   }
   return scored;
@@ -887,10 +1205,10 @@ function renderCombinedChart() {
   const tempMax = rawTempMax > 30 ? roundUpToStep(rawTempMax, 10) : 30;
   const rainValues = state.allDays.map((day) => day.expectedRainfall);
   const rainMax = Math.max(...rainValues, 0);
-  const rainTop = rainMax > 10 ? roundUpToStep(rainMax, 10) : 10;
-  const rainBands = buildRainIntensityBands(rainValues);
+  const rainTop = computeRainAxisTop(rainMax);
+  const rainBands = buildRainIntensityBands();
   const rainDescriptor = mobile
-    ? `L<=${rainBands.lightMax.toFixed(1)} M<=${rainBands.mediumMax.toFixed(1)} H>${rainBands.heavyMin.toFixed(1)} mm`
+    ? `L<=${rainBands.lightMax} M<=${rainBands.mediumMax} H<=${rainBands.heavyMax} X>${rainBands.heavyMax} mm`
     : rainBands.descriptor;
   const barWidth = Math.max(14, slotWidth - 10);
   const centerIndex = 7;
@@ -901,11 +1219,17 @@ function renderCombinedChart() {
     "",
   );
   const todayIndex = state.allDays.findIndex((day) => day.date === todayDate);
+  const bestForecastDate = getBestForecastDate(state.scoredDays);
 
   const xAt = (index) => margin.left + slotWidth / 2 + index * slotWidth;
   const barXAt = (index) => xAt(index) - barWidth / 2;
   const yTempAt = (value) => margin.top + plotHeight - ((value - tempMin) / Math.max(tempMax - tempMin, 8)) * plotHeight;
   const yRainAt = (value) => margin.top + plotHeight - (value / rainTop) * plotHeight;
+  const medalYAt = (value) => {
+    const candidate = yRainAt(value) - (mobile ? 14 : 10);
+    const minY = margin.top + (mobile ? 22 : 16);
+    return Math.max(minY, candidate);
+  };
   const freezingLineY = yTempAt(0);
   const showFreezingLine = tempMin < 0 && tempMax >= 0;
   const focusDateShort = state.focusDate ? formatShortDate(state.focusDate) : "";
@@ -961,7 +1285,7 @@ function renderCombinedChart() {
           }
         ${state.allDays.map((day, index) => `
           <rect
-            class="${index === focusIndex ? "combined-bar selected" : "combined-bar"}"
+            class="${index === focusIndex ? "combined-bar selected" : "combined-bar"}${day.date === bestForecastDate ? " best-day" : ""}"
             x="${barXAt(index)}"
             y="${yRainAt(day.expectedRainfall)}"
             rx="4"
@@ -970,6 +1294,14 @@ function renderCombinedChart() {
             height="${Math.max(2, margin.top + plotHeight - yRainAt(day.expectedRainfall))}"
           ></rect>
         `).join("")}
+        ${bestForecastDate
+          ? state.allDays
+              .map((day, index) => {
+                if (day.date !== bestForecastDate) return "";
+                return `<text class="best-day-medal" x="${xAt(index)}" y="${medalYAt(day.expectedRainfall)}" text-anchor="middle" aria-label="Best day in next 10 days" title="Best day in next 10 days">🥇</text>`;
+              })
+              .join("")
+          : ""}
         <path class="combined-line-min" d="${buildSmoothPath(minPoints)}"></path>
         <path class="combined-line-avg" d="${buildSmoothPath(avgPoints)}"></path>
         <path class="combined-line-max" d="${buildSmoothPath(maxPoints)}"></path>
@@ -1020,9 +1352,10 @@ function renderDaySelector() {
     .map((day) => {
       const parts = formatTimelineLabelParts(day.date);
       const isActive = day.date === state.focusDate;
+      const isBestDay = day.date === getBestForecastDate(state.scoredDays);
       return `
         <button class="day-chip${isActive ? " is-active" : ""}" type="button" data-day="${day.date}" aria-pressed="${isActive}">
-          <span>${parts.weekday}</span>
+          <span>${parts.weekday}${isBestDay ? ' <span class="day-chip-medal" aria-label="Best day in next 10 days" title="Best day in next 10 days">🥇</span>' : ""}</span>
           <strong>${parts.monthDay}</strong>
         </button>
       `;
@@ -1064,27 +1397,29 @@ function setMobileTab(tab) {
 function renderSelectedDay() {
   const selectedDay = getSelectedDay();
   if (!selectedDay) return;
+  const memory = computePersonalMemorySignal(selectedDay);
 
   const label = formatTimelineLabel(selectedDay.date);
-  elements.summaryLabel.textContent = label;
+  elements.summaryLabel.textContent = "Go timing confidence";
   elements.todayScore.textContent = `${selectedDay.score}/100`;
   elements.todayVerdict.textContent = selectedDay.verdict;
   elements.confidenceBadge.textContent = selectedDay.confidence;
-  elements.analysisTitle.textContent = `${label} evidence`;
-  elements.analysisCopy.textContent = "Select a day to inspect conditions.";
+  elements.analysisTitle.textContent = `${label} timing view`;
+  elements.analysisCopy.textContent = "Select a day to review weather fit and personal memory signal.";
   if (elements.seasonBadge) elements.seasonBadge.textContent = `${selectedDay.season} seasonal context`;
   elements.detailDateLabel.textContent = label;
   elements.detailScore.textContent = `${selectedDay.score}/100`;
   elements.detailVerdict.textContent = selectedDay.verdict;
-  elements.detailCopy.textContent = selectedDay.reasons.join(" ");
+  const isBestDay = selectedDay.date === getBestForecastDate(state.scoredDays);
+  elements.detailCopy.textContent = `${isBestDay ? "Best day in next 10 days. " : ""}Personal memory says: ${formatMemorySignal(memory)}. ${selectedDay.reasons.join(" ")}`;
   elements.detailMetrics.innerHTML = `
-    <p class="metric-method-note">Window: recent 72h for temperature and humidity; rain is 3-day total.</p>
-    <div class="metric-pill"><span>Temp min</span><strong>${Number.isFinite(selectedDay.weightedTemp72hMin) ? selectedDay.weightedTemp72hMin.toFixed(1) : "--"}&deg;C</strong></div>
-    <div class="metric-pill"><span>Temp avg</span><strong>${Number.isFinite(selectedDay.weightedTemp72hAvg) ? selectedDay.weightedTemp72hAvg.toFixed(1) : "--"}&deg;C</strong></div>
-    <div class="metric-pill"><span>Temp max</span><strong>${Number.isFinite(selectedDay.weightedTemp72hMax) ? selectedDay.weightedTemp72hMax.toFixed(1) : "--"}&deg;C</strong></div>
-    <div class="metric-pill"><span>Rain</span><strong>${Number.isFinite(selectedDay.weightedRain72h) ? selectedDay.weightedRain72h.toFixed(1) : "--"} mm</strong></div>
-    <div class="metric-pill"><span>Humidity</span><strong>${Number.isFinite(selectedDay.humidity72hAvg) ? selectedDay.humidity72hAvg.toFixed(0) : "--"} %</strong></div>
+    <p class="metric-method-note">Simple 3-day snapshot: temperature and humidity are min/avg/max, rain is total plus daily average.</p>
+    <div class="metric-pill"><span>Personal memory</span><strong>${formatMemorySignalBadge(memory)} | n=${memory.memorySampleSize}${Number.isFinite(memory.favorableRate) ? ` | ${Math.round(memory.favorableRate * 100)}% favorable` : ""}</strong></div>
+    <div class="metric-pill"><span>Temp (3d)</span><strong>${Number.isFinite(selectedDay.tempMin3d) ? selectedDay.tempMin3d.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.tempAvg3d) ? selectedDay.tempAvg3d.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.tempMax3d) ? selectedDay.tempMax3d.toFixed(1) : "--"}&deg;C</strong></div>
+    <div class="metric-pill"><span>Rain (3d)</span><strong>${Number.isFinite(selectedDay.rainTotal3d) ? selectedDay.rainTotal3d.toFixed(1) : "--"} mm total | ${Number.isFinite(selectedDay.rainAvg3d) ? selectedDay.rainAvg3d.toFixed(1) : "--"} mm/day</strong></div>
+    <div class="metric-pill"><span>Humidity (3d)</span><strong>${Number.isFinite(selectedDay.humidityMin3d) ? selectedDay.humidityMin3d.toFixed(0) : "--"} / ${Number.isFinite(selectedDay.humidityAvg3d) ? selectedDay.humidityAvg3d.toFixed(0) : "--"} / ${Number.isFinite(selectedDay.humidityMax3d) ? selectedDay.humidityMax3d.toFixed(0) : "--"} %</strong></div>
   `;
+  renderFeedbackUI();
   renderRegionalStats();
   renderDaySelector();
 }
@@ -1117,7 +1452,7 @@ function renderRegionalStats() {
     <span class="chart-unit">Page ${currentPage} / ${pageCount}</span>
     <button class="ghost-button" type="button" data-regional-page="${Math.min(pageCount, currentPage + 1)}" ${currentPage >= pageCount ? "disabled" : ""}>Next</button>
   `;
-  elements.regionalCopy.textContent = "";
+  elements.regionalCopy.textContent = "Background context only: nearby observations inform confidence, not your core timing score.";
 }
 
 function moveFocus(step) {
@@ -1223,7 +1558,11 @@ async function analyzeLocation(location, shouldMoveMap = true) {
     const days = normalizeWeather(payload);
     const todayIndex = findTodayIndex(days);
     state.allDays = scoreAllDays(days, todayIndex);
-    state.scoredDays = state.allDays.slice(todayIndex, todayIndex + 11);
+    const forecastStart = Math.min(state.allDays.length, todayIndex + 1);
+    state.scoredDays = state.allDays.slice(forecastStart, forecastStart + FORECAST_WINDOW_DAYS);
+    if (!state.scoredDays.length) {
+      state.scoredDays = state.allDays.slice(todayIndex, todayIndex + FORECAST_WINDOW_DAYS);
+    }
     state.focusDate = state.scoredDays[0]?.date ?? null;
     renderCombinedChart();
     renderSelectedDay();
@@ -1317,6 +1656,17 @@ elements.daySelector.addEventListener("click", (event) => {
   if (!button) return;
   setFocusDate(button.dataset.day);
 });
+elements.feedbackOptions?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-feedback-value]");
+  if (!button) return;
+  logFeedback(button.dataset.feedbackValue ?? "");
+});
+elements.exportFeedbackButton?.addEventListener("click", () => {
+  copyFeedbackLogToClipboard();
+});
+elements.clearFeedbackButton?.addEventListener("click", () => {
+  clearFeedbackLog();
+});
 elements.mobileTabs.addEventListener("click", (event) => {
   const button = event.target.closest("[data-mobile-tab]");
   if (!button) return;
@@ -1381,6 +1731,7 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && elements.imageModal && !elements.imageModal.hidden) closeImageModal();
 });
 
+state.feedbackLog = loadFeedbackLog();
 initMap();
 setMobileTab("overview");
 analyzeLocation(state.selected);

@@ -138,6 +138,28 @@ The script reports:
 
 Current script location: `scripts/backtest.mjs`.
 
+## Decay Calibration
+
+To keep day-to-day score decline biologically realistic (no overnight cliffs), run:
+
+```powershell
+npm run calibrate:decay
+```
+
+Script location: `scripts/calibrate-decay.mjs`.
+
+It reports:
+
+- `oneDayDropP50`, `oneDayDropP90`
+- `postPeakDropP50`, `postPeakDropP90`
+- sample counts used for each metric
+
+Recommended guardrails for this model family:
+
+- `postPeakDropP90` should typically stay near single digits
+- `oneDayDropP50` should remain modest (gradual taper, not collapse)
+- tune model persistence/drydown constants only when these drift materially
+
 ## Product Discussion Needed
 
 Before adding major workflows, decide what FungiFinder is actually trying to be:
@@ -151,6 +173,9 @@ Before adding major workflows, decide what FungiFinder is actually trying to be:
 Those are different products with different UX, trust boundaries, data needs, and
 liability concerns. The current prototype should stay focused until that purpose is
 chosen deliberately.
+
+Execution guide: see `docs/market-gap-execution-playbook.md` for a concrete 30-day
+pilot plan, KPI framework, and weekly shipping cadence.
 
 ## Suggested Architecture
 
@@ -177,3 +202,49 @@ Then open:
 ```text
 http://127.0.0.1:4173
 ```
+
+## Shared Feedback Log Setup
+
+The app now supports a shared empirical feedback log for many users.
+Each feedback answer is still saved locally, and also queued for remote sync.
+
+### Fastest free setup (Google Sheets + Apps Script)
+
+1. Open Google Sheets and create a new sheet.
+2. Open `Extensions -> Apps Script`.
+3. Paste `scripts/google-apps-script/feedback_logger.gs` into the script editor.
+4. Save, then `Deploy -> New deployment -> Web app`:
+   - Execute as: `Me`
+   - Who has access: `Anyone`
+5. Copy the deployed Web App URL.
+6. In `src/runtime-config.js`, set:
+   - `window.FUNGI_FEEDBACK_ENDPOINT = "<your-web-app-url>"`
+7. Redeploy your static site.
+
+If endpoint is empty, feedback remains local-only.
+
+### Remote endpoint contract
+
+The app sends `POST` JSON body (one record per request). Expected response:
+
+- `2xx`: success, entry removed from pending queue
+- non-`2xx`: failure, entry remains queued and retries later
+
+Payload includes:
+
+- `id`, `loggedAt`
+- `response` (`Not at all`, `One or Two`, `Several`, `A ton!`)
+- `expectedScoreMin`, `expectedScoreMax`, `expectedScoreMidpoint`
+- `scoreDeltaFromFeedbackCurve`
+- `date`, `score`, `probability`, `verdict`
+- `locationLabel`, `latitude`, `longitude`
+- `tripDuration` (`short`, `medium`, `long`)
+- `memoryMonth`, `memoryRainClass`, `memoryHumidityClass`
+- `appModelVersion`, `appTargetDefinition`, `userAgent`
+
+### Why this is lightweight
+
+- Free tier
+- No server to run
+- Shared multi-user log across devices
+- Spreadsheet is easy to inspect/export for later model retuning

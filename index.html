@@ -50,7 +50,7 @@
         </form>
 
         <div class="summary-band" id="summaryBand">
-          <span class="score-label" id="summaryLabel">Selected day</span>
+          <span class="score-label" id="summaryLabel">Go timing confidence</span>
           <strong id="todayScore">--</strong>
           <span id="todayVerdict">Choose a location to begin.</span>
           <span class="confidence-pill" id="confidenceBadge">Confidence</span>
@@ -63,7 +63,7 @@
         <section class="forecast-panel" aria-label="Daily mushroom prognosis">
           <div class="forecast-heading">
             <div>
-              <p class="eyebrow">Present day plus one week</p>
+              <p class="eyebrow">Past context + next 10-day timing view</p>
               <h2>Foraging Outlook</h2>
             </div>
             <div class="place-actions">
@@ -82,7 +82,7 @@
           <section class="analysis-panel" aria-label="Selected day evidence">
             <div class="analysis-header">
               <div>
-                <p class="eyebrow">Weather evidence</p>
+                <p class="eyebrow">Timing evidence</p>
                 <h3 id="analysisTitle">Today</h3>
               </div>
               <p class="analysis-copy" id="analysisCopy">
@@ -102,7 +102,7 @@
                     <h4>General conditions timeline</h4>
                     <p>Rainfall and temperature trends.</p>
                   </div>
-                  <span class="chart-unit">7 days back, 7 ahead</span>
+                  <span class="chart-unit">7 days back, next 10</span>
                 </div>
                 <div class="chart-legend" aria-label="Chart legend">
                   <span class="legend-item"><span class="legend-swatch legend-bar" aria-hidden="true"></span>Rainfall</span>
@@ -117,7 +117,7 @@
               <section class="detail-panel" id="detailPanel" aria-label="Selected day detail">
                 <div class="detail-header">
                   <div>
-                    <p class="eyebrow">Highlighted day</p>
+                    <p class="eyebrow">Decision card</p>
                     <h4 id="detailDateLabel">Today</h4>
                   </div>
                   <div class="detail-score">
@@ -129,13 +129,36 @@
                 <p class="detail-copy" id="detailCopy">
                   The highlighted day explains how general growing conditions line up at that point in the timeline.
                 </p>
+                <section class="feedback-panel" aria-label="Foraging feedback">
+                  <p class="eyebrow">Field feedback</p>
+                  <h5>What did this trip yield?</h5>
+                  <label class="feedback-duration">
+                    Trip duration
+                    <select id="tripDurationSelect" aria-label="Trip duration">
+                      <option value="short">Short</option>
+                      <option value="medium" selected>Medium</option>
+                      <option value="long">Long</option>
+                    </select>
+                  </label>
+                  <div class="feedback-options" id="feedbackOptions">
+                    <button type="button" class="ghost-button feedback-option" data-feedback-value="Not at all">Not at all</button>
+                    <button type="button" class="ghost-button feedback-option" data-feedback-value="One or Two">One or Two</button>
+                    <button type="button" class="ghost-button feedback-option" data-feedback-value="Several">Several</button>
+                    <button type="button" class="ghost-button feedback-option" data-feedback-value="A ton!">A ton!</button>
+                  </div>
+                  <p class="feedback-status" id="feedbackStatus">No feedback logged for this day yet.</p>
+                  <div class="feedback-actions">
+                    <button type="button" class="ghost-button" id="exportFeedbackButton">Copy feedback log</button>
+                    <button type="button" class="ghost-button" id="clearFeedbackButton">Clear log</button>
+                  </div>
+                </section>
               </section>
             </section>
             <section class="mobile-section" id="mobileExamplesSection">
               <section class="regional-panel" aria-label="Regional observation signal">
                 <div class="regional-heading">
                   <div>
-                    <p class="eyebrow">Observer coverage context</p>
+                    <p class="eyebrow">Background species context</p>
                     <h4>Nearby reports (context only)</h4>
                   </div>
                   <span class="chart-unit" id="regionalConfidence"></span>
@@ -143,9 +166,7 @@
                 <div class="regional-grid" id="regionalMetrics"></div>
                 <div class="regional-tiles" id="regionalTiles" aria-label="Recent nearby research observations"></div>
                 <div class="regional-pagination" id="regionalPagination"></div>
-                <p class="detail-copy" id="regionalCopy">
-                  Nearby observation data calibrates the score.
-                </p>
+                <p class="detail-copy" id="regionalCopy">Background context only: nearby observations inform confidence, not your core timing score.</p>
               </section>
             </section>
           </section>
@@ -170,6 +191,7 @@
       integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
       crossorigin=""
     ></script>
+    <script src="./src/runtime-config.js"></script>
     <script type="module" src="./src/app.js?v=20260520-10"></script>
   </body>
 </html>
