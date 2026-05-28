@@ -48,12 +48,12 @@
             <div class="location-suggestions" id="locationSuggestions" hidden></div>
           </label>
           <button class="icon-button" type="submit" aria-label="Analyze location" title="Analyze location">
-            Go
+            Run
           </button>
         </form>
 
         <div class="summary-band" id="summaryBand">
-          <span class="score-label" id="summaryLabel">Go timing confidence</span>
+          <span class="score-label" id="summaryLabel">Foraging conditions confidence</span>
           <strong id="todayScore">--</strong>
           <span id="todayVerdict">Choose a location to begin.</span>
           <span class="confidence-pill" id="confidenceBadge">Confidence</span>
@@ -62,7 +62,7 @@
         <section class="feedback-panel" aria-label="Foraging feedback">
           <p class="eyebrow">Field check-ins (future model tuning only)</p>
           <h5>Trip feedback</h5>
-          <p class="analysis-copy">Check-ins are stored for future calibration and do not change current go timing confidence.</p>
+          <p class="analysis-copy">Check-ins are stored for future calibration and do not change current daily scores.</p>
           <button type="button" class="primary-button" id="openFeedbackModalButton">Trip feedback</button>
           <div class="feedback-sync-row">
             <span class="feedback-sync-badge" id="feedbackSyncBadge">Sync pending</span>
@@ -136,7 +136,7 @@
               <section class="detail-panel" id="detailPanel" aria-label="Selected day detail">
                 <div class="detail-header">
                   <div>
-                    <p class="eyebrow">Decision card</p>
+                    <p class="eyebrow">Daily signal card</p>
                     <h4 id="detailDateLabel">Today</h4>
                   </div>
                   <div class="detail-score">
@@ -155,14 +155,14 @@
                 <div class="regional-heading">
                   <div>
                     <p class="eyebrow">Background species context</p>
-                    <h4>Nearby reports (context only)</h4>
+                    <h4>Nearby reports (iNaturalist context)</h4>
                   </div>
                   <span class="chart-unit" id="regionalConfidence"></span>
                 </div>
                 <div class="regional-grid" id="regionalMetrics"></div>
                 <div class="regional-tiles" id="regionalTiles" aria-label="Recent nearby research observations"></div>
                 <div class="regional-pagination" id="regionalPagination"></div>
-                <p class="detail-copy" id="regionalCopy">Background context only: nearby observations inform confidence, not your core timing score.</p>
+                <p class="detail-copy" id="regionalCopy">Nearby iNaturalist observations are context only; they support confidence and do not drive the timing score.</p>
               </section>
             </section>
           </section>

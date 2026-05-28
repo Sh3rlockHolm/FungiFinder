@@ -31,6 +31,8 @@ const HEADER = [
   "expected_score_max",
   "expected_score_midpoint",
   "score_delta_from_feedback_curve",
+  "prediction_alignment_label",
+  "prediction_alignment_matched",
   "trip_duration_label",
   "trip_duration_bucket",
   "observed_date_local",
@@ -93,6 +95,8 @@ function validatePayload_(p) {
   if (!isNonEmptyString_(p.event_id)) return { ok: false, error: "Missing event_id" };
   if (!ALLOWED_RESPONSES.includes(p.response)) return { ok: false, error: "Invalid response" };
   if (!ALLOWED_BUCKETS.includes(p.trip_duration_bucket)) return { ok: false, error: "Invalid trip_duration_bucket" };
+  if (!isNonEmptyString_(p.prediction_alignment_label)) return { ok: false, error: "Missing prediction_alignment_label" };
+  if (typeof p.prediction_alignment_matched !== "boolean") return { ok: false, error: "Invalid prediction_alignment_matched" };
 
   const requiredNumbers = [
     "expected_score_min",
@@ -211,6 +215,8 @@ function buildRow_(p) {
     value_(p.expected_score_max),
     value_(p.expected_score_midpoint),
     value_(p.score_delta_from_feedback_curve),
+    value_(p.prediction_alignment_label),
+    value_(p.prediction_alignment_matched),
     value_(p.trip_duration_label),
     value_(p.trip_duration_bucket),
     value_(p.observed_date_local),

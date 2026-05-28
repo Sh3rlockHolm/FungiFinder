@@ -686,5 +686,5 @@ export function scoreToVerdict(probability) {
   if (score >= 75) return "Strong chance of finding good mushrooms";
   if (score >= 60) return "Decent chance of finding mushrooms";
   if (score >= 40) return "Possible finds, but likely limited";
-  return "Sparse conditions, generally not recommended";
+  return "Sparse conditions, with lower odds of meaningful finds";
 }

@@ -50,6 +50,7 @@ const FEEDBACK_DURATION_LABELS = {
   long: "Longer than 2 hrs",
 };
 const FEEDBACK_ENV_WEIGHTS_5D = [0.15, 0.25, 0.3, 0.2, 0.1];
+const FEEDBACK_EXPECTATION_MATCH_DELTA_MAX = 15;
 const FORECAST_WINDOW_DAYS = 10;
 const RAIN_AXIS_BASE_CAP_MM = 40;
 const RAIN_AXIS_STEP_MM = 10;
@@ -295,15 +296,16 @@ function renderFeedbackUI() {
   }
   const when = current.logged_at_utc ? new Date(current.logged_at_utc).toLocaleString() : "Unknown time";
   const durationText = current.trip_duration_label ? ` | Duration: ${current.trip_duration_label}` : "";
+  const alignmentText = current.prediction_alignment_label ? ` | Alignment: ${current.prediction_alignment_label}` : "";
   const deltaText = Number.isFinite(current.score_delta_from_feedback_curve)
     ? ` | Score vs feedback curve: ${current.score_delta_from_feedback_curve >= 0 ? "+" : ""}${current.score_delta_from_feedback_curve}`
     : "";
   if (hasFailure) {
     elements.feedbackStatus.textContent =
-      `Saved for this day and location: ${current.response}${durationText} (${when}). Upload failed for now and will retry automatically.`;
+      `Saved for this day and location: ${current.response}${durationText}${alignmentText} (${when}). Upload failed for now and will retry automatically.`;
     return;
   }
-  elements.feedbackStatus.textContent = `Saved for this day and location: ${current.response}${durationText} (${when}). Total check-ins: ${state.feedbackLog.length}.${deltaText}`;
+  elements.feedbackStatus.textContent = `Saved for this day and location: ${current.response}${durationText}${alignmentText} (${when}). Total check-ins: ${state.feedbackLog.length}.${deltaText}`;
 }
 
 function buildFeedbackSyncErrorText() {
@@ -332,6 +334,12 @@ function logFeedback(response) {
   const tripDurationLabel = FEEDBACK_DURATION_LABELS[tripDuration] ?? FEEDBACK_DURATION_LABELS.medium;
   const curve = FEEDBACK_SCORE_CURVE[response] ?? { min: 0, max: 100, midpoint: 50 };
   const scoreDeltaFromFeedbackCurve = Math.round(day.score - curve.midpoint);
+  const alignmentLabel =
+    Math.abs(scoreDeltaFromFeedbackCurve) <= FEEDBACK_EXPECTATION_MATCH_DELTA_MAX
+      ? "Matched expectation"
+      : scoreDeltaFromFeedbackCurve > 0
+        ? "Better than expected"
+        : "Lower than expected";
   const observedDateLocal = day.date;
   const loggedAtUtc = new Date().toISOString();
   const entry = {
@@ -342,6 +350,8 @@ function logFeedback(response) {
     expected_score_max: curve.max,
     expected_score_midpoint: curve.midpoint,
     score_delta_from_feedback_curve: scoreDeltaFromFeedbackCurve,
+    prediction_alignment_label: alignmentLabel,
+    prediction_alignment_matched: alignmentLabel === "Matched expectation",
     trip_duration_label: tripDurationLabel,
     trip_duration_bucket: tripDuration,
     observed_date_local: observedDateLocal,
@@ -656,13 +666,13 @@ function getBestForecastDate(scoredDays) {
   return best?.date ?? null;
 }
 
-function goCallFromScore(score) {
+function outlookLabelFromScore(score) {
   if (!Number.isFinite(score)) return "--";
-  if (score >= 90) return "Excellent go day";
-  if (score >= 75) return "Strong go day";
-  if (score >= 60) return "Decent go day";
-  if (score >= 40) return "Borderline day";
-  return "Usually wait";
+  if (score >= 90) return "Excellent outlook";
+  if (score >= 75) return "Strong outlook";
+  if (score >= 60) return "Promising outlook";
+  if (score >= 40) return "Mixed outlook";
+  return "Low outlook";
 }
 
 function moistureSignalLabel(moistureResponse) {
@@ -1595,17 +1605,17 @@ function renderSelectedDay() {
       : null;
   const dryDays = selectedDay?.diagnostics?.dryDaysSinceMeaningfulRain;
   const crashPhase = selectedDay?.diagnostics?.crashPhase ?? null;
-  const goCall = goCallFromScore(selectedDay.score);
+  const outlookLabel = outlookLabelFromScore(selectedDay.score);
   const moistureSignal = moistureSignalLabel(moistureResponse);
   const persistence = persistenceLabel({ dryDays, crashPhase });
 
   const label = formatTimelineLabel(selectedDay.date);
-  elements.summaryLabel.textContent = "Go timing confidence";
+  elements.summaryLabel.textContent = "Foraging conditions confidence";
   elements.todayScore.textContent = `${selectedDay.score}/100`;
   elements.todayVerdict.textContent = selectedDay.verdict;
   elements.confidenceBadge.textContent = selectedDay.confidence;
   elements.analysisTitle.textContent = `${label} timing view`;
-  elements.analysisCopy.textContent = "Select a day to see a simple go/no-go timing readout.";
+  elements.analysisCopy.textContent = "Select a day to see a simple timing and conditions readout.";
   if (elements.seasonBadge) elements.seasonBadge.textContent = `${selectedDay.season} seasonal context`;
   elements.detailDateLabel.textContent = label;
   elements.detailScore.textContent = `${selectedDay.score}/100`;
@@ -1614,8 +1624,8 @@ function renderSelectedDay() {
   const topReasons = (selectedDay.reasons ?? []).slice(0, 2).join(" ");
   elements.detailCopy.textContent = `${isBestDay ? "Best day in next 10 days. " : ""}${topReasons}`;
   elements.detailMetrics.innerHTML = `
-    <p class="metric-method-note">Simple readout: go call, moisture signal, persistence, and recent weather context.</p>
-    <div class="metric-pill"><span>Go call</span><strong>${goCall}</strong></div>
+    <p class="metric-method-note">Simple readout: outlook, moisture signal, persistence, and recent weather context.</p>
+    <div class="metric-pill"><span>Outlook</span><strong>${outlookLabel}</strong></div>
     <div class="metric-pill"><span>Moisture signal</span><strong>${moistureSignal}</strong></div>
     <div class="metric-pill"><span>Persistence</span><strong>${persistence}</strong></div>
     <div class="metric-pill"><span>Temp (3d)</span><strong>${Number.isFinite(selectedDay.tempMin3d) ? selectedDay.tempMin3d.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.tempAvg3d) ? selectedDay.tempAvg3d.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.tempMax3d) ? selectedDay.tempMax3d.toFixed(1) : "--"}&deg;C</strong></div>
@@ -1654,7 +1664,7 @@ function renderRegionalStats() {
     <span class="chart-unit">Page ${currentPage} / ${pageCount}</span>
     <button class="ghost-button" type="button" data-regional-page="${Math.min(pageCount, currentPage + 1)}" ${currentPage >= pageCount ? "disabled" : ""}>Next</button>
   `;
-  elements.regionalCopy.textContent = "Background context only: nearby observations inform confidence, not your core timing score.";
+  elements.regionalCopy.textContent = "Nearby iNaturalist observations are context only; they support confidence and do not drive the timing score.";
 }
 
 function moveFocus(step) {

@@ -177,6 +177,27 @@ chosen deliberately.
 Execution guide: see `docs/market-gap-execution-playbook.md` for a concrete 30-day
 pilot plan, KPI framework, and weekly shipping cadence.
 
+## Quality-First Scope Reset (Current Focus)
+
+For the current 6-8 week cycle, FungiFinder is intentionally narrow:
+
+- primary value: near-term foraging conditions outlook with transparent factors
+- iNaturalist role: nearby context only (not ID/social replacement)
+- feedback role: calibration signal for downstream model tuning
+
+In scope:
+
+- score stability and confidence-label quality
+- clearer timing-factor explanations
+- reliable feedback logging and sync
+
+Out of scope:
+
+- route/trip planning
+- habitat/tree-distribution tooling
+- species ID or edibility advice
+- major new workflows outside the current loop
+
 ## Suggested Architecture
 
 The best long-term shape is a shared TypeScript domain core:
@@ -241,6 +262,7 @@ Payload includes:
 - `response`
 - `expected_score_min`, `expected_score_max`, `expected_score_midpoint`
 - `score_delta_from_feedback_curve`
+- `prediction_alignment_label`, `prediction_alignment_matched`
 - `trip_duration_label`, `trip_duration_bucket`
 - `observed_date_local`, `logged_at_utc`
 - `location_label`, `latitude`, `longitude`
@@ -249,6 +271,10 @@ Payload includes:
 - `rain_5d_weighted_mm`, `temp_5d_weighted_c`, `humidity_5d_weighted_pct`
 - `days_since_meaningful_rain`, `rain_class_fixed`
 - `app_model_version`, `app_target_definition`
+
+Recommended KPI for small pilot samples:
+- prediction trust match rate (`prediction_alignment_matched=true`) over time
+- weekly false-positive / false-negative notes from feedback exports
 
 ### Why this is lightweight
 
