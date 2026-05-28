@@ -217,30 +217,38 @@ Each feedback answer is still saved locally, and also queued for remote sync.
    - Execute as: `Me`
    - Who has access: `Anyone`
 5. Copy the deployed Web App URL.
-6. In `src/runtime-config.js`, set:
+6. In `scripts/google-apps-script/feedback_logger.gs`, set:
+   - `API_KEY_VALUE = "<your-strong-shared-secret>"`
+7. In `src/runtime-config.js`, set:
    - `window.FUNGI_FEEDBACK_ENDPOINT = "<your-web-app-url>"`
-7. Redeploy your static site.
+   - `window.FUNGI_FEEDBACK_API_KEY = "<same-shared-secret>"`
+   - optional: `window.FUNGI_FEEDBACK_API_KEY_HEADER = "x-api-key"`
+8. Redeploy your static site.
 
 If endpoint is empty, feedback remains local-only.
 
 ### Remote endpoint contract
 
-The app sends `POST` JSON body (one record per request). Expected response:
+The app sends `POST` JSON body (one record per request). Expected JSON response:
 
-- `2xx`: success, entry removed from pending queue
-- non-`2xx`: failure, entry remains queued and retries later
+- `{ ok: true, duplicate: false|true }`: success, entry removed from pending queue
+- `{ ok: false, error: "..." }`: failure, entry remains queued and retries later
+
+Note: Google Apps Script Web Apps may still return HTTP 200 on logical failures, so the client checks JSON `ok` and not HTTP status alone.
 
 Payload includes:
-
-- `id`, `loggedAt`
-- `response` (`Not at all`, `One or Two`, `Several`, `A ton!`)
-- `expectedScoreMin`, `expectedScoreMax`, `expectedScoreMidpoint`
-- `scoreDeltaFromFeedbackCurve`
-- `date`, `score`, `probability`, `verdict`
-- `locationLabel`, `latitude`, `longitude`
-- `tripDuration` (`short`, `medium`, `long`)
-- `memoryMonth`, `memoryRainClass`, `memoryHumidityClass`
-- `appModelVersion`, `appTargetDefinition`, `userAgent`
+- `schema_version`, `event_id`
+- `response`
+- `expected_score_min`, `expected_score_max`, `expected_score_midpoint`
+- `score_delta_from_feedback_curve`
+- `trip_duration_label`, `trip_duration_bucket`
+- `observed_date_local`, `logged_at_utc`
+- `location_label`, `latitude`, `longitude`
+- `score`, `probability`, `verdict`
+- `rain_3d_mm`, `temp_avg_3d_c`, `humidity_avg_3d_pct`, `vpd_avg_3d_kpa`
+- `rain_5d_weighted_mm`, `temp_5d_weighted_c`, `humidity_5d_weighted_pct`
+- `days_since_meaningful_rain`, `rain_class_fixed`
+- `app_model_version`, `app_target_definition`
 
 ### Why this is lightweight
 
