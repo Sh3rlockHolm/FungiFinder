@@ -51,7 +51,7 @@ const FEEDBACK_DURATION_LABELS = {
 };
 const FEEDBACK_ENV_WEIGHTS_5D = [0.15, 0.25, 0.3, 0.2, 0.1];
 const FEEDBACK_EXPECTATION_MATCH_DELTA_MAX = 15;
-const FORECAST_WINDOW_DAYS = 10;
+const FORECAST_WINDOW_DAYS = 14;
 const RAIN_AXIS_BASE_CAP_MM = 40;
 const RAIN_AXIS_STEP_MM = 10;
 const LOCKED_RAIN_BANDS = {
@@ -754,7 +754,7 @@ async function fetchWeather(latitude, longitude) {
     longitude: longitude.toFixed(5),
     daily: "temperature_2m_mean,temperature_2m_max,temperature_2m_min,precipitation_sum",
     hourly: "temperature_2m,relative_humidity_2m",
-    forecast_days: "11",
+    forecast_days: "15",
     past_days: "7",
     timezone: "auto",
   });
@@ -1499,7 +1499,7 @@ function renderCombinedChart() {
           ? state.allDays
               .map((day, index) => {
                 if (day.date !== bestForecastDate) return "";
-                return `<text class="best-day-medal" x="${xAt(index)}" y="${medalYAt(day.expectedRainfall)}" text-anchor="middle" aria-label="Best day in next 10 days" title="Best day in next 10 days">🥇</text>`;
+                return `<text class="best-day-medal" x="${xAt(index)}" y="${medalYAt(day.expectedRainfall)}" text-anchor="middle" aria-label="Best day in next 14 days" title="Best day in next 14 days">🥇</text>`;
               })
               .join("")
           : ""}
@@ -1556,7 +1556,7 @@ function renderDaySelector() {
       const isBestDay = day.date === getBestForecastDate(state.scoredDays);
       return `
         <button class="day-chip${isActive ? " is-active" : ""}" type="button" data-day="${day.date}" aria-pressed="${isActive}">
-          <span>${parts.weekday}${isBestDay ? ' <span class="day-chip-medal" aria-label="Best day in next 10 days" title="Best day in next 10 days">🥇</span>' : ""}</span>
+          <span>${parts.weekday}${isBestDay ? ' <span class="day-chip-medal" aria-label="Best day in next 14 days" title="Best day in next 14 days">🥇</span>' : ""}</span>
           <strong>${parts.monthDay}</strong>
         </button>
       `;
@@ -1622,7 +1622,7 @@ function renderSelectedDay() {
   elements.detailVerdict.textContent = selectedDay.verdict;
   const isBestDay = selectedDay.date === getBestForecastDate(state.scoredDays);
   const topReasons = (selectedDay.reasons ?? []).slice(0, 2).join(" ");
-  elements.detailCopy.textContent = `${isBestDay ? "Best day in next 10 days. " : ""}${topReasons}`;
+  elements.detailCopy.textContent = `${isBestDay ? "Best day in next 14 days. " : ""}${topReasons}`;
   elements.detailMetrics.innerHTML = `
     <p class="metric-method-note">Simple readout: outlook, moisture signal, persistence, and recent weather context.</p>
     <div class="metric-pill"><span>Outlook</span><strong>${outlookLabel}</strong></div>

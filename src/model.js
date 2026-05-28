@@ -602,7 +602,7 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
     1,
   );
 
-  const horizonPenalty = clamp(daysAhead / 10, 0, SCORING_CONFIG.globalConfig.horizonPenaltyMax);
+  const horizonPenalty = clamp(daysAhead / 14, 0, SCORING_CONFIG.globalConfig.horizonPenaltyMax);
   const sparseRegional = !regionalStats || (regionalStats.totalObservations ?? 0) < 20;
   const regionalPenalty = sparseRegional ? SCORING_CONFIG.globalConfig.sparseRegionalPenalty : 0;
 
