@@ -856,6 +856,21 @@ dd {
   flex-wrap: wrap;
 }
 
+.feedback-modal-window {
+  width: min(520px, 94vw);
+}
+
+.feedback-modal-body {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.feedback-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.15rem;
+}
+
 .regional-grid,
 .breakdown-strip {
   display: grid;

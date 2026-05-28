@@ -58,22 +58,9 @@
 
         <section class="feedback-panel" aria-label="Foraging feedback">
           <p class="eyebrow">Field check-ins (future model tuning only)</p>
-          <h5>What did this trip yield?</h5>
+          <h5>Trip feedback</h5>
           <p class="analysis-copy">Check-ins are stored for future calibration and do not change current go timing confidence.</p>
-          <label class="feedback-duration">
-            Trip duration
-            <select id="tripDurationSelect" aria-label="Trip duration">
-              <option value="short">Short</option>
-              <option value="medium" selected>Medium</option>
-              <option value="long">Long</option>
-            </select>
-          </label>
-          <div class="feedback-options" id="feedbackOptions">
-            <button type="button" class="ghost-button feedback-option" data-feedback-value="Not at all">Not at all</button>
-            <button type="button" class="ghost-button feedback-option" data-feedback-value="One or Two">One or Two</button>
-            <button type="button" class="ghost-button feedback-option" data-feedback-value="Several">Several</button>
-            <button type="button" class="ghost-button feedback-option" data-feedback-value="A ton!">A ton!</button>
-          </div>
+          <button type="button" class="primary-button" id="openFeedbackModalButton">Trip feedback</button>
           <p class="feedback-status" id="feedbackStatus">No feedback logged for this day yet.</p>
           <div class="feedback-actions">
             <button type="button" class="ghost-button" id="exportFeedbackButton">Copy feedback log</button>
@@ -184,6 +171,33 @@
         </div>
         <div class="image-modal-body">
           <img id="imageModalPreview" alt="Observation preview">
+        </div>
+      </div>
+    </div>
+    <div class="modal-backdrop" id="feedbackModal" hidden>
+      <div class="modal-window feedback-modal-window" role="dialog" aria-modal="true" aria-labelledby="feedbackModalTitle">
+        <div class="modal-header">
+          <h3 id="feedbackModalTitle">Did you find mushrooms today?</h3>
+          <button class="icon-button modal-close" id="closeFeedbackModalButton" type="button" aria-label="Close feedback form">X</button>
+        </div>
+        <div class="feedback-modal-body">
+          <label class="feedback-duration">
+            Trip duration
+            <select id="tripDurationSelect" aria-label="Trip duration">
+              <option value="short">Less than 30 mins</option>
+              <option value="medium" selected>Under two hours (30-120 mins)</option>
+              <option value="long">Longer than 2 hrs</option>
+            </select>
+          </label>
+          <div class="feedback-options" id="feedbackOptions">
+            <button type="button" class="ghost-button feedback-option" data-feedback-value="Not at all">Not at all</button>
+            <button type="button" class="ghost-button feedback-option" data-feedback-value="One or Two">One or Two</button>
+            <button type="button" class="ghost-button feedback-option" data-feedback-value="Several">Several</button>
+            <button type="button" class="ghost-button feedback-option" data-feedback-value="A ton!">A ton!</button>
+          </div>
+          <div class="feedback-modal-actions">
+            <button type="button" class="primary-button" id="submitFeedbackButton">Submit feedback</button>
+          </div>
         </div>
       </div>
     </div>
