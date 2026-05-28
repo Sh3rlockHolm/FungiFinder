@@ -20,6 +20,13 @@ const state = {
   touchStartX: null,
   feedbackLog: [],
   feedbackDraftResponse: null,
+  feedbackSync: {
+    inFlight: false,
+    lastAttemptAt: null,
+    lastSuccessAt: null,
+    lastError: null,
+    lastErrorEventId: null,
+  },
 };
 
 const FEEDBACK_STORAGE_KEY = "fungifinder_feedback_log_v1";
@@ -150,7 +157,7 @@ function buildRemoteHeaders() {
 }
 
 async function pushFeedbackEntryRemote(entry) {
-  if (!REMOTE_FEEDBACK_ENDPOINT) return false;
+  if (!REMOTE_FEEDBACK_ENDPOINT) return { ok: false, error: "Remote endpoint not configured." };
   let endpoint = REMOTE_FEEDBACK_ENDPOINT;
   if (REMOTE_FEEDBACK_API_KEY && (endpoint.includes("script.google.com/macros/") || !REMOTE_FEEDBACK_API_KEY_HEADER)) {
     const join = endpoint.includes("?") ? "&" : "?";
@@ -167,8 +174,12 @@ async function pushFeedbackEntryRemote(entry) {
   } catch {
     payload = null;
   }
-  if (payload && typeof payload === "object") return payload.ok === true;
-  return response.ok;
+  if (payload && typeof payload === "object") {
+    if (payload.ok === true) return { ok: true, duplicate: payload.duplicate === true };
+    return { ok: false, error: payload.error || "Server rejected request.", code: payload.code ?? null };
+  }
+  if (response.ok) return { ok: true, duplicate: false };
+  return { ok: false, error: `HTTP ${response.status}` };
 }
 
 function generateEventId() {
@@ -184,18 +195,39 @@ function queueFeedbackForRemoteSync(entry) {
 
 async function flushPendingFeedbackQueue() {
   if (!REMOTE_FEEDBACK_ENDPOINT) return;
+  state.feedbackSync.inFlight = true;
+  state.feedbackSync.lastAttemptAt = new Date().toISOString();
   const pending = loadPendingFeedbackQueue();
-  if (!pending.length) return;
+  if (!pending.length) {
+    state.feedbackSync.inFlight = false;
+    return;
+  }
   const next = [];
+  let hadFailure = false;
   for (const entry of pending) {
     try {
-      const ok = await pushFeedbackEntryRemote(entry);
-      if (!ok) next.push(entry);
-    } catch {
+      const result = await pushFeedbackEntryRemote(entry);
+      if (result.ok) {
+        state.feedbackSync.lastSuccessAt = new Date().toISOString();
+        if (!hadFailure) {
+          state.feedbackSync.lastError = null;
+          state.feedbackSync.lastErrorEventId = null;
+        }
+      } else {
+        hadFailure = true;
+        next.push(entry);
+        state.feedbackSync.lastError = result.error || "Unknown remote sync failure.";
+        state.feedbackSync.lastErrorEventId = entry.event_id || "unknown";
+      }
+    } catch (error) {
+      hadFailure = true;
       next.push(entry);
+      state.feedbackSync.lastError = error?.message || "Network error during sync.";
+      state.feedbackSync.lastErrorEventId = entry.event_id || "unknown";
     }
   }
   savePendingFeedbackQueue(next);
+  state.feedbackSync.inFlight = false;
 }
 
 function selectedFeedbackEntry() {
@@ -229,8 +261,21 @@ function renderFeedbackUI() {
   const remoteSuffix = REMOTE_FEEDBACK_ENDPOINT
     ? ` Remote queue: ${pendingCount}.`
     : " Remote endpoint not configured (local log only).";
+  const syncPrefix = state.feedbackSync.inFlight ? " Syncing..." : "";
+  const syncAttemptText = state.feedbackSync.lastAttemptAt
+    ? ` Last sync attempt: ${new Date(state.feedbackSync.lastAttemptAt).toLocaleTimeString()}.`
+    : "";
+  const syncFailureText =
+    pendingCount > 0 && state.feedbackSync.lastError
+      ? ` Last failure: ${state.feedbackSync.lastError} (event ${state.feedbackSync.lastErrorEventId || "unknown"}).`
+      : "";
+  const syncSuccessText =
+    pendingCount === 0 && state.feedbackSync.lastSuccessAt
+      ? ` Last upload success: ${new Date(state.feedbackSync.lastSuccessAt).toLocaleTimeString()}.`
+      : "";
+  const syncDetail = `${syncPrefix}${syncAttemptText}${syncFailureText}${syncSuccessText}`;
   if (!current) {
-    elements.feedbackStatus.textContent = `No check-in logged for this day yet. Total check-ins: ${state.feedbackLog.length}.${remoteSuffix}`;
+    elements.feedbackStatus.textContent = `No check-in logged for this day yet. Total check-ins: ${state.feedbackLog.length}.${remoteSuffix}${syncDetail}`;
     return;
   }
   const when = current.logged_at_utc ? new Date(current.logged_at_utc).toLocaleString() : "Unknown time";
@@ -239,7 +284,7 @@ function renderFeedbackUI() {
     ? ` | Score vs feedback curve: ${current.score_delta_from_feedback_curve >= 0 ? "+" : ""}${current.score_delta_from_feedback_curve}`
     : "";
   elements.feedbackStatus.textContent =
-    `Saved for this day and location: ${current.response}${durationText} (${when}). Total check-ins: ${state.feedbackLog.length}.${deltaText}.${remoteSuffix}`;
+    `Saved for this day and location: ${current.response}${durationText} (${when}). Total check-ins: ${state.feedbackLog.length}.${deltaText}.${remoteSuffix}${syncDetail}`;
 }
 
 function logFeedback(response) {
