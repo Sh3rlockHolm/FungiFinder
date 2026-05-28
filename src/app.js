@@ -8,7 +8,7 @@ const state = {
   marker: null,
   regionalStats: null,
   scoredDays: [],
-  selected: { latitude: 41.0772, longitude: -73.4687, label: "Darien, CT" },
+  selected: { latitude: 48.0000, longitude: 8.0000, label: "Black Forest, Germany" },
   regionalPage: 1,
   regionalRenderedPage: 1,
   regionalTilePages: new Map(),
@@ -423,7 +423,7 @@ const dayFormatter = new Intl.DateTimeFormat(undefined, {
 });
 const weekdayFormatter = new Intl.DateTimeFormat(undefined, { weekday: "short" });
 const monthDayFormatter = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
-const shortDateFormatter = new Intl.DateTimeFormat("en-US", { month: "2-digit", day: "2-digit" });
+const shortDatePartsFormatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "2-digit" });
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -563,7 +563,13 @@ function formatTimelineLabelParts(dateString) {
 }
 
 function formatShortDate(dateString) {
-  return shortDateFormatter.format(new Date(`${dateString}T12:00:00`));
+  const date = new Date(`${dateString}T12:00:00`);
+  const parts = shortDatePartsFormatter.formatToParts(date);
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  const year = parts.find((part) => part.type === "year")?.value;
+  if (!month || !day || !year) return dateString;
+  return `${month} ${day}, '${year}`;
 }
 
 function buildRainIntensityBands() {
@@ -759,7 +765,7 @@ async function fetchINaturalistCount(latitude, longitude, extraParams = {}) {
     lat: latitude.toFixed(5),
     lng: longitude.toFixed(5),
     per_page: "1",
-    radius: "50",
+    radius: "30",
     verifiable: "true",
     ...extraParams,
   });
@@ -775,7 +781,7 @@ async function fetchINaturalistRecentResearch(latitude, longitude, extraParams =
     lat: latitude.toFixed(5),
     lng: longitude.toFixed(5),
     per_page: "8",
-    radius: "50",
+    radius: "30",
     verifiable: "true",
     quality_grade: "research",
     order: "desc",
@@ -798,7 +804,8 @@ async function fetchINaturalistRecentResearch(latitude, longitude, extraParams =
       .filter(Boolean)
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(" ");
-    const observedOn = item.observed_on || item.time_observed_at?.slice(0, 10) || "";
+    const observedOnRaw = item.observed_on || item.time_observed_at?.slice(0, 10) || "";
+    const observedOn = observedOnRaw ? formatShortDate(observedOnRaw) : "";
     const photo = item.photos?.[0]?.url?.replace("square", "medium") ?? "";
     return {
       id: item.id,
@@ -830,7 +837,7 @@ async function fetchINaturalistRecentNonResearch(latitude, longitude, extraParam
     lat: latitude.toFixed(5),
     lng: longitude.toFixed(5),
     per_page: "200",
-    radius: "50",
+    radius: "30",
     verifiable: "true",
     quality_grade: "needs_id",
     order: "desc",
@@ -853,7 +860,8 @@ async function fetchINaturalistRecentNonResearch(latitude, longitude, extraParam
         .filter(Boolean)
         .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
         .join(" ");
-      const observedOn = item.observed_on || item.time_observed_at?.slice(0, 10) || "";
+      const observedOnRaw = item.observed_on || item.time_observed_at?.slice(0, 10) || "";
+      const observedOn = observedOnRaw ? formatShortDate(observedOnRaw) : "";
       const photo = item.photos?.[0]?.url?.replace("square", "medium") ?? "";
       return {
         id: item.id,
@@ -1826,7 +1834,7 @@ elements.locationSuggestions.addEventListener("click", (event) => {
   if (!option) return;
   chooseSuggestion(Number.parseInt(option.dataset.suggestionIndex, 10));
 });
-elements.sampleButton.addEventListener("click", () => analyzeLocation({ label: "Darien, CT", latitude: 41.0772, longitude: -73.4687 }));
+elements.sampleButton.addEventListener("click", () => analyzeLocation({ label: "Black Forest, Germany", latitude: 48.0000, longitude: 8.0000 }));
 elements.useLocationButton.addEventListener("click", () => {
   if (!navigator.geolocation) {
     setStatus("No GPS");
