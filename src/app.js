@@ -151,7 +151,7 @@ function saveFeedbackLog() {
 }
 
 function buildRemoteHeaders() {
-  const headers = { "Content-Type": "application/json" };
+  const headers = { "Content-Type": "text/plain;charset=utf-8" };
   const isGoogleScriptEndpoint = REMOTE_FEEDBACK_ENDPOINT.includes("script.google.com/macros/");
   if (REMOTE_FEEDBACK_ENDPOINT && REMOTE_FEEDBACK_API_KEY && !isGoogleScriptEndpoint) {
     headers[REMOTE_FEEDBACK_API_KEY_HEADER] = REMOTE_FEEDBACK_API_KEY;
