@@ -720,6 +720,7 @@ function seasonScoreForDate(dateString, latitude) {
 function buildReasons({
   rainEventClass,
   rain5dResponse,
+  humidityCarryoverSupport,
   crashPhase,
   dryingPenalty,
   harvestWindowComponent,
@@ -737,6 +738,9 @@ function buildReasons({
   else if (rain5dResponse >= 0.4) reasons.push("Recent moisture support is moderate and still helpful.");
   else if (rainEventClass === "none") reasons.push("No recent meaningful rain is supporting woodland mushrooms.");
   else reasons.push("Moisture support is present but limited.");
+  if (Number.isFinite(humidityCarryoverSupport) && humidityCarryoverSupport >= 0.04) {
+    reasons.push("Humid air is helping moisture persist after recent rain.");
+  }
 
   if (spoilagePenalty >= 0.35) reasons.push("Warm, wet conditions may increase rot or insect pressure.");
   else if (stalenessPenalty >= 0.35) reasons.push("Heat and drying can age mushrooms quickly.");
@@ -1317,6 +1321,7 @@ function scoreDay(days, index, todayIndex) {
     reasons: buildReasons({
       rainEventClass: featureBundle.diagnostics.rainEventClass,
       rain5dResponse: featureBundle.diagnostics.rain5d_response,
+      humidityCarryoverSupport: featureBundle.diagnostics.humidityCarryoverSupport,
       crashPhase: featureBundle.diagnostics.crashPhase,
       dryingPenalty: featureBundle.dryingPenalty,
       harvestWindowComponent: featureBundle.harvestWindowComponent,

@@ -1,12 +1,12 @@
 export const MODEL_METADATA = {
-  modelVersion: "v8.1.5",
+  modelVersion: "v8.1.6",
   modelType: "guild_mixture_rain5d_model",
   calibrationMethod: "bounded_guild_blend_rain5d",
   trainedWindow: {
     from: "2024-01-01",
     to: "2026-05-20",
   },
-  featureSchemaHash: "ff-v8_1_5-stable-postpeak-tail-20260527",
+  featureSchemaHash: "ff-v8_1_6-humidity-carryover-midrange-20260528",
   targetDefinition: "P(harvestable_foraging_success_local_window_2_4d)",
   radiusKm: 30,
 };
@@ -65,6 +65,16 @@ export const SCORING_CONFIG = {
     scoreBounds: { min: 0.06, max: 0.97 },
     horizonPenaltyMax: 0.13,
     sparseRegionalPenalty: 0.01,
+    humidityCarryover: {
+      vpdSupport: { bestMax: 0.7, fadeMax: 1.2 },
+      tempSupport: { coolC: 8, bestLowC: 12, bestHighC: 20, warmC: 25 },
+      dryDaysSupport: { start: 1, peak: 3, fadeEnd: 8 },
+      rainSupportMin: 0.35,
+      memorySupportMin: 0.32,
+      maxSupport: 0.16,
+      inferWeight: 0.08,
+      midrangeGate: { start: 0.82, full: 0.93 },
+    },
     scoreTransform: {
       center: 0.39,
       slope: 4.8,
@@ -147,6 +157,7 @@ const FACTOR_LABELS = {
   harvestWindowComponent: "Harvest-window timing",
   spoilagePenalty: "Spoilage pressure",
   stalenessPenalty: "Staleness pressure",
+  humidityCarryoverSupport: "Humidity carryover support",
   temperatureComponent: "Temperature suitability",
   dryingPenalty: "Drying penalty",
   coldPenalty: "Cold penalty",
@@ -388,6 +399,42 @@ function harvestTimingAndQualityFeatures({
   };
 }
 
+function humidityCarryoverFeatures({
+  meanTemp3,
+  vpd3,
+  dryDaysSinceMeaningfulRain,
+  rain5dResponse,
+  memorySignal,
+  config,
+}) {
+  const vpdCfg = config.vpdSupport;
+  const tempCfg = config.tempSupport;
+  const dryCfg = config.dryDaysSupport;
+
+  const vpdSupport = clamp(1 - scale(vpd3, vpdCfg.bestMax, vpdCfg.fadeMax), 0, 1);
+  const tempSupport = centeredScale(meanTemp3, tempCfg.coolC, tempCfg.bestLowC, tempCfg.bestHighC, tempCfg.warmC);
+  const rainSupport = scale(rain5dResponse, config.rainSupportMin, 0.8);
+  const memorySupport = scale(memorySignal, config.memorySupportMin, 0.75);
+  const dryDaysRise = scale(dryDaysSinceMeaningfulRain, dryCfg.start, dryCfg.peak);
+  const dryDaysFade = 1 - scale(dryDaysSinceMeaningfulRain, dryCfg.peak, dryCfg.fadeEnd);
+  const dryDaysSupport = clamp(dryDaysRise * dryDaysFade, 0, 1);
+
+  const carryoverSupport = clamp(
+    config.maxSupport * vpdSupport * tempSupport * rainSupport * memorySupport * dryDaysSupport,
+    0,
+    config.maxSupport,
+  );
+
+  return {
+    carryoverSupport,
+    vpdSupport,
+    tempSupport,
+    rainSupport,
+    memorySupport,
+    dryDaysSupport,
+  };
+}
+
 export function buildModelFeatures({ day, previousWindow, seasonScore, latitude }) {
   const currentRain = Number.isFinite(day.precipitation) ? Math.max(0, day.precipitation) : 0;
   const rainHistory21d = Array.isArray(previousWindow.rainHistory21d)
@@ -445,6 +492,14 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
     vpd3,
     rainHistory21d,
     rainThresholds: SCORING_CONFIG.globalConfig.rainThresholdsMm,
+  });
+  const humidityCarryover = humidityCarryoverFeatures({
+    meanTemp3,
+    vpd3,
+    dryDaysSinceMeaningfulRain,
+    rain5dResponse: rain5.rain5d_response,
+    memorySignal: antecedentMemory.memorySignal,
+    config: SCORING_CONFIG.globalConfig.humidityCarryover,
   });
 
   const guildScores = {};
@@ -537,6 +592,7 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
     dryingPenalty: blended.dryingPenalty,
     coldPenalty: blended.coldPenalty,
     seasonalComponent: blended.seasonalComponent,
+    humidityCarryoverSupport: humidityCarryover.carryoverSupport,
     climateProxy: 1 - clamp(Math.abs(latitude) / 75, 0, 1),
     diagnostics: {
       climatePreset: climatePresetKey,
@@ -563,6 +619,12 @@ export function buildModelFeatures({ day, previousWindow, seasonScore, latitude 
       rainMemorySignal: antecedentMemory.memorySignal,
       memoryBlendWeight: dynamicMemoryWeight,
       rainMoistureSignal,
+      humidityCarryoverSupport: humidityCarryover.carryoverSupport,
+      humidityCarryoverVpdSupport: humidityCarryover.vpdSupport,
+      humidityCarryoverTempSupport: humidityCarryover.tempSupport,
+      humidityCarryoverRainSupport: humidityCarryover.rainSupport,
+      humidityCarryoverMemorySupport: humidityCarryover.memorySupport,
+      humidityCarryoverDryDaysSupport: humidityCarryover.dryDaysSupport,
       harvestWindowComponent: harvestTiming.harvestWindowComponent,
       properRainForLateDecay: harvestTiming.properRain,
       properRainByRecentHistory: harvestTiming.properRainByRecentHistory,
@@ -611,9 +673,16 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
     0,
     0.1,
   );
+  const carryoverConfig = SCORING_CONFIG.globalConfig.humidityCarryover;
+  const midrangeGate = clamp(1 - scale(calibratedEcologicalScore, carryoverConfig.midrangeGate.start, carryoverConfig.midrangeGate.full), 0, 1);
+  const humidityCarryoverLift = clamp(
+    carryoverConfig.inferWeight * (featureVector.humidityCarryoverSupport ?? 0) * midrangeGate,
+    0,
+    carryoverConfig.maxSupport,
+  );
 
   const bounds = SCORING_CONFIG.globalConfig.scoreBounds;
-  const baseProbability = (calibratedEcologicalScore + warmRainSynergy) * (1 - horizonPenalty) - regionalPenalty;
+  const baseProbability = (calibratedEcologicalScore + warmRainSynergy + humidityCarryoverLift) * (1 - horizonPenalty) - regionalPenalty;
   const calibrationLift = 0.03;
   const adjustedProbability = clamp(
     baseProbability + calibrationLift,
@@ -637,6 +706,7 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
     coldPenalty: featureVector.coldPenalty ?? 0,
     seasonalComponent: featureVector.seasonalComponent ?? 0,
     warmRainSynergy,
+    humidityCarryoverLift,
     finalScore: adjustedProbability,
   };
 
@@ -649,6 +719,7 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
     { key: "coldPenalty", impact: -0.03 * (featureVector.coldPenalty ?? 0) },
     { key: "spoilagePenalty", impact: -0.08 * (featureVector.spoilagePenalty ?? 0) },
     { key: "stalenessPenalty", impact: -0.07 * (featureVector.stalenessPenalty ?? 0) },
+    { key: "humidityCarryoverSupport", impact: 0.08 * (featureVector.humidityCarryoverSupport ?? 0) * midrangeGate },
   ];
 
   const topFactors = signedFactors
@@ -676,6 +747,8 @@ export function inferFruitingSignal({ featureVector, daysAhead = 0, regionalStat
       rawEcologicalScore,
       transformedScore,
       sparseRegional,
+      humidityCarryoverLift,
+      humidityCarryoverMidrangeGate: midrangeGate,
     },
   };
 }

@@ -1,12 +1,12 @@
 {
-  "modelVersion": "v8.1.5",
+  "modelVersion": "v8.1.6",
   "modelType": "guild_mixture_rain5d_model",
   "calibrationMethod": "bounded_guild_blend_rain5d",
   "trainedWindow": {
     "from": "2024-01-01",
     "to": "2026-05-20"
   },
-  "featureSchemaHash": "ff-v8_1_5-stable-postpeak-tail-20260527",
+  "featureSchemaHash": "ff-v8_1_6-humidity-carryover-midrange-20260528",
   "targetDefinition": "P(harvestable_foraging_success_local_window_2_4d)",
   "radiusKm": 30
 }
