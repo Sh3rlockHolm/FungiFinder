@@ -64,6 +64,10 @@
           <h5>Trip feedback</h5>
           <p class="analysis-copy">Check-ins are stored for future calibration and do not change current go timing confidence.</p>
           <button type="button" class="primary-button" id="openFeedbackModalButton">Trip feedback</button>
+          <div class="feedback-sync-row">
+            <span class="feedback-sync-badge" id="feedbackSyncBadge">Sync pending</span>
+            <button type="button" class="ghost-button feedback-copy-error" id="copyFeedbackErrorButton" hidden>Copy error text</button>
+          </div>
           <p class="feedback-status" id="feedbackStatus">No feedback logged for this day yet.</p>
           <div class="feedback-actions">
             <button type="button" class="ghost-button" id="exportFeedbackButton">Copy feedback log</button>

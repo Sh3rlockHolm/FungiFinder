@@ -108,6 +108,8 @@ const elements = {
   feedbackModal: document.querySelector("#feedbackModal"),
   closeFeedbackModalButton: document.querySelector("#closeFeedbackModalButton"),
   submitFeedbackButton: document.querySelector("#submitFeedbackButton"),
+  feedbackSyncBadge: document.querySelector("#feedbackSyncBadge"),
+  copyFeedbackErrorButton: document.querySelector("#copyFeedbackErrorButton"),
 };
 
 function loadFeedbackLog() {
@@ -261,24 +263,34 @@ function renderFeedbackUI() {
     elements.tripDurationSelect.value = selectedDuration;
   }
   const pendingCount = loadPendingFeedbackQueue().length;
-  const remoteSuffix = REMOTE_FEEDBACK_ENDPOINT
-    ? ` Remote queue: ${pendingCount}.`
-    : " Remote endpoint not configured (local log only).";
-  const syncPrefix = state.feedbackSync.inFlight ? " Syncing..." : "";
-  const syncAttemptText = state.feedbackSync.lastAttemptAt
-    ? ` Last sync attempt: ${new Date(state.feedbackSync.lastAttemptAt).toLocaleTimeString()}.`
-    : "";
-  const syncFailureText =
-    pendingCount > 0 && state.feedbackSync.lastError
-      ? ` Last failure: ${state.feedbackSync.lastError} (event ${state.feedbackSync.lastErrorEventId || "unknown"}).`
-      : "";
-  const syncSuccessText =
-    pendingCount === 0 && state.feedbackSync.lastSuccessAt
-      ? ` Last upload success: ${new Date(state.feedbackSync.lastSuccessAt).toLocaleTimeString()}.`
-      : "";
-  const syncDetail = `${syncPrefix}${syncAttemptText}${syncFailureText}${syncSuccessText}`;
+  const hasFailure = pendingCount > 0 && !!state.feedbackSync.lastError;
+  const hasRemote = !!REMOTE_FEEDBACK_ENDPOINT;
+  if (elements.feedbackSyncBadge) {
+    elements.feedbackSyncBadge.classList.remove("is-success", "is-pending", "is-error");
+    if (!hasRemote) {
+      elements.feedbackSyncBadge.textContent = "Local only";
+    } else if (hasFailure) {
+      elements.feedbackSyncBadge.textContent = "Sync issue";
+      elements.feedbackSyncBadge.classList.add("is-error");
+    } else if (pendingCount > 0 || state.feedbackSync.inFlight) {
+      elements.feedbackSyncBadge.textContent = "Sync pending";
+      elements.feedbackSyncBadge.classList.add("is-pending");
+    } else {
+      elements.feedbackSyncBadge.textContent = "Synced";
+      elements.feedbackSyncBadge.classList.add("is-success");
+    }
+  }
+  if (elements.copyFeedbackErrorButton) {
+    elements.copyFeedbackErrorButton.hidden = !hasFailure;
+  }
   if (!current) {
-    elements.feedbackStatus.textContent = `No check-in logged for this day yet. Total check-ins: ${state.feedbackLog.length}.${remoteSuffix}${syncDetail}`;
+    if (hasFailure) {
+      elements.feedbackStatus.textContent = "Upload failed. We will retry automatically when possible.";
+    } else if (!hasRemote) {
+      elements.feedbackStatus.textContent = `No check-in logged for this day yet. Total check-ins: ${state.feedbackLog.length}. Local-only logging is active.`;
+    } else {
+      elements.feedbackStatus.textContent = `No check-in logged for this day yet. Total check-ins: ${state.feedbackLog.length}.`;
+    }
     return;
   }
   const when = current.logged_at_utc ? new Date(current.logged_at_utc).toLocaleString() : "Unknown time";
@@ -286,8 +298,30 @@ function renderFeedbackUI() {
   const deltaText = Number.isFinite(current.score_delta_from_feedback_curve)
     ? ` | Score vs feedback curve: ${current.score_delta_from_feedback_curve >= 0 ? "+" : ""}${current.score_delta_from_feedback_curve}`
     : "";
-  elements.feedbackStatus.textContent =
-    `Saved for this day and location: ${current.response}${durationText} (${when}). Total check-ins: ${state.feedbackLog.length}.${deltaText}.${remoteSuffix}${syncDetail}`;
+  if (hasFailure) {
+    elements.feedbackStatus.textContent =
+      `Saved for this day and location: ${current.response}${durationText} (${when}). Upload failed for now and will retry automatically.`;
+    return;
+  }
+  elements.feedbackStatus.textContent = `Saved for this day and location: ${current.response}${durationText} (${when}). Total check-ins: ${state.feedbackLog.length}.${deltaText}`;
+}
+
+function buildFeedbackSyncErrorText() {
+  const pendingCount = loadPendingFeedbackQueue().length;
+  const attempt = state.feedbackSync.lastAttemptAt || "unknown";
+  const err = state.feedbackSync.lastError || "unknown";
+  const eventId = state.feedbackSync.lastErrorEventId || "unknown";
+  return `Feedback sync failure\npending_count=${pendingCount}\nlast_attempt=${attempt}\nlast_error=${err}\nevent_id=${eventId}`;
+}
+
+async function copyFeedbackSyncError() {
+  const text = buildFeedbackSyncErrorText();
+  try {
+    await navigator.clipboard.writeText(text);
+    if (elements.feedbackStatus) elements.feedbackStatus.textContent = "Sync error text copied.";
+  } catch {
+    if (elements.feedbackStatus) elements.feedbackStatus.textContent = "Could not copy sync error text.";
+  }
 }
 
 function logFeedback(response) {
@@ -1842,6 +1876,9 @@ elements.feedbackModal?.addEventListener("click", (event) => {
 });
 elements.exportFeedbackButton?.addEventListener("click", () => {
   copyFeedbackLogToClipboard();
+});
+elements.copyFeedbackErrorButton?.addEventListener("click", () => {
+  copyFeedbackSyncError();
 });
 elements.clearFeedbackButton?.addEventListener("click", () => {
   clearFeedbackLog();

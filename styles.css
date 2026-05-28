@@ -849,6 +849,49 @@ dd {
   color: var(--muted);
 }
 
+.feedback-sync-row {
+  margin-top: 0.55rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.feedback-sync-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.74rem;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.feedback-sync-badge.is-success {
+  border-color: rgba(42, 109, 78, 0.4);
+  color: #1f5b3f;
+  background: rgba(194, 231, 210, 0.55);
+}
+
+.feedback-sync-badge.is-pending {
+  border-color: rgba(130, 100, 28, 0.4);
+  color: #6f5817;
+  background: rgba(249, 234, 188, 0.58);
+}
+
+.feedback-sync-badge.is-error {
+  border-color: rgba(142, 48, 48, 0.45);
+  color: #7d2e2e;
+  background: rgba(248, 212, 212, 0.62);
+}
+
+.feedback-copy-error {
+  font-size: 0.74rem;
+  min-height: 28px;
+  padding: 0.2rem 0.55rem;
+}
+
 .feedback-actions {
   margin-top: 0.55rem;
   display: flex;
