@@ -331,6 +331,8 @@ select:focus-visible,
 }
 
 .summary-band {
+  position: relative;
+  overflow: hidden;
   display: grid;
   gap: 10px;
   padding: 22px;
@@ -340,6 +342,87 @@ select:focus-visible,
     radial-gradient(circle at 84% 20%, rgba(200, 140, 59, 0.22), transparent 42%),
     linear-gradient(150deg, #193f2d, #25563e 54%, #2f664d 100%);
   box-shadow: var(--shadow);
+}
+
+.summary-clipart {
+  position: absolute;
+  right: 14px;
+  bottom: 10px;
+  display: flex;
+  align-items: end;
+  gap: 6px;
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+.clipart-tree,
+.clipart-mushroom {
+  display: inline-block;
+  position: relative;
+}
+
+.clipart-tree {
+  width: 16px;
+  height: 26px;
+}
+
+.clipart-tree::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 7px;
+  width: 0;
+  height: 0;
+  transform: translateX(-50%);
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 15px solid rgba(255, 255, 255, 0.9);
+}
+
+.clipart-tree::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 4px;
+  height: 8px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.clipart-tree-small {
+  transform: scale(0.8);
+  transform-origin: bottom center;
+}
+
+.clipart-mushroom {
+  width: 16px;
+  height: 18px;
+}
+
+.clipart-mushroom::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 14px;
+  height: 8px;
+  transform: translateX(-50%);
+  border-radius: 8px 8px 5px 5px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.clipart-mushroom::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 7px;
+  width: 5px;
+  height: 10px;
+  transform: translateX(-50%);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.84);
 }
 
 .score-label {
@@ -692,6 +775,29 @@ dd {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
+}
+
+.regional-clipart {
+  display: inline-flex;
+  align-items: end;
+  gap: 5px;
+  opacity: 0.45;
+}
+
+.regional-clipart .clipart-tree::before {
+  border-bottom-color: rgba(36, 85, 61, 0.55);
+}
+
+.regional-clipart .clipart-tree::after {
+  background: rgba(36, 85, 61, 0.5);
+}
+
+.regional-clipart .clipart-mushroom::before {
+  background: rgba(200, 140, 59, 0.75);
+}
+
+.regional-clipart .clipart-mushroom::after {
+  background: rgba(117, 92, 43, 0.65);
 }
 
 .chart-mount {
@@ -1345,6 +1451,11 @@ dd {
     font-size: 0.74rem;
   }
 
+  .summary-clipart,
+  .regional-clipart {
+    opacity: 0.25;
+  }
+
   .detail-metrics {
     grid-template-columns: 1fr;
   }
@@ -1456,6 +1567,13 @@ dd {
     top: 2px;
     right: 2px;
     width: auto;
+  }
+
+  .summary-clipart {
+    right: 10px;
+    bottom: 8px;
+    transform: scale(0.9);
+    transform-origin: bottom right;
   }
 
   .day-chip {
