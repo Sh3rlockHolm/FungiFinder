@@ -1864,6 +1864,10 @@ window.addEventListener("keydown", (event) => {
 });
 
 state.feedbackLog = loadFeedbackLog();
+flushPendingFeedbackQueue().then(() => renderFeedbackUI());
+window.setInterval(() => {
+  flushPendingFeedbackQueue().then(() => renderFeedbackUI());
+}, 30000);
 initMap();
 setMobileTab("overview");
 analyzeLocation(state.selected);
