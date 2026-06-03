@@ -53,6 +53,7 @@ const FEEDBACK_ENV_WEIGHTS_5D = [0.15, 0.25, 0.3, 0.2, 0.1];
 const FEEDBACK_EXPECTATION_MATCH_DELTA_MAX = 15;
 const FORECAST_FUTURE_DAYS = 14;
 const FORECAST_WINDOW_DAYS = FORECAST_FUTURE_DAYS + 1;
+const INATURALIST_RADIUS_KM = 50;
 const RAIN_AXIS_BASE_CAP_MM = 40;
 const RAIN_AXIS_STEP_MM = 10;
 const LOCKED_RAIN_BANDS = {
@@ -83,6 +84,7 @@ const elements = {
   mobileOverviewSection: document.querySelector("#mobileOverviewSection"),
   mobileDetailsSection: document.querySelector("#mobileDetailsSection"),
   mobileExamplesSection: document.querySelector("#mobileExamplesSection"),
+  mobileForecastList: document.querySelector("#mobileForecastList"),
   openMapsLink: document.querySelector("#openMapsLink"),
   placeLabel: document.querySelector("#placeLabel"),
   daySelector: document.querySelector("#daySelector"),
@@ -667,13 +669,23 @@ function getBestForecastDate(scoredDays) {
   return best?.date ?? null;
 }
 
-function outlookLabelFromScore(score) {
-  if (!Number.isFinite(score)) return "--";
-  if (score >= 90) return "Excellent outlook";
-  if (score >= 75) return "Strong outlook";
-  if (score >= 60) return "Promising outlook";
-  if (score >= 40) return "Mixed outlook";
-  return "Low outlook";
+function signalBandFromScore(score) {
+  if (!Number.isFinite(score)) {
+    return { label: "Unknown signal", shortLabel: "Unknown", className: "signal-unknown" };
+  }
+  if (score >= 90) return { label: "Exceptional signal", shortLabel: "Exceptional", className: "signal-exceptional" };
+  if (score >= 75) return { label: "Strong signal", shortLabel: "Strong", className: "signal-strong" };
+  if (score >= 60) return { label: "Moderate signal", shortLabel: "Moderate", className: "signal-moderate" };
+  if (score >= 40) return { label: "Limited signal", shortLabel: "Limited", className: "signal-limited" };
+  return { label: "Low signal", shortLabel: "Low", className: "signal-low" };
+}
+
+function signalBandClass(score) {
+  return signalBandFromScore(score).className;
+}
+
+function formatScore(score) {
+  return Number.isFinite(score) ? `${Math.round(score)}/100` : "--";
 }
 
 function moistureSignalLabel(moistureResponse) {
@@ -780,7 +792,7 @@ async function fetchINaturalistCount(latitude, longitude, extraParams = {}) {
     lat: latitude.toFixed(5),
     lng: longitude.toFixed(5),
     per_page: "1",
-    radius: "30",
+    radius: String(INATURALIST_RADIUS_KM),
     verifiable: "true",
     ...extraParams,
   });
@@ -796,7 +808,7 @@ async function fetchINaturalistRecentResearch(latitude, longitude, extraParams =
     lat: latitude.toFixed(5),
     lng: longitude.toFixed(5),
     per_page: "8",
-    radius: "30",
+    radius: String(INATURALIST_RADIUS_KM),
     verifiable: "true",
     quality_grade: "research",
     order: "desc",
@@ -852,7 +864,7 @@ async function fetchINaturalistRecentNonResearch(latitude, longitude, extraParam
     lat: latitude.toFixed(5),
     lng: longitude.toFixed(5),
     per_page: "200",
-    radius: "30",
+    radius: String(INATURALIST_RADIUS_KM),
     verifiable: "true",
     quality_grade: "needs_id",
     order: "desc",
@@ -1418,6 +1430,8 @@ function renderCombinedChart() {
     ? `L<=${rainBands.lightMax} M<=${rainBands.mediumMax} H<=${rainBands.heavyMax} X>${rainBands.heavyMax} mm`
     : rainBands.descriptor;
   const barWidth = Math.max(14, slotWidth - 10);
+  const opportunityRibbonHeight = mobile ? 34 : 30;
+  const opportunityRibbonY = margin.top + (mobile ? 6 : 8);
   const centerIndex = 7;
   const todayDate = new Date().toISOString().slice(0, 10);
   const focusIndex = state.allDays.findIndex((day) => day.date === state.focusDate);
@@ -1430,6 +1444,8 @@ function renderCombinedChart() {
 
   const xAt = (index) => margin.left + slotWidth / 2 + index * slotWidth;
   const barXAt = (index) => xAt(index) - barWidth / 2;
+  const forecastSlotWidth = plotWidth / Math.max(1, state.scoredDays.length);
+  const forecastXAt = (index) => margin.left + forecastSlotWidth / 2 + index * forecastSlotWidth;
   const yTempAt = (value) => margin.top + plotHeight - ((value - tempMin) / Math.max(tempMax - tempMin, 8)) * plotHeight;
   const yRainAt = (value) => margin.top + plotHeight - (value / rainTop) * plotHeight;
   const medalYAt = (value) => {
@@ -1444,6 +1460,7 @@ function renderCombinedChart() {
   const minPoints = state.allDays.map((day, index) => ({ x: xAt(index), y: yTempAt(day.minTemp) }));
   const avgPoints = state.allDays.map((day, index) => ({ x: xAt(index), y: yTempAt(day.meanTemp) }));
   const maxPoints = state.allDays.map((day, index) => ({ x: xAt(index), y: yTempAt(day.maxTemp) }));
+  const forecastFocusIndex = state.scoredDays.findIndex((day) => day.date === state.focusDate);
   const centerX = xAt(centerIndex);
   const leftPinnedTranslate = margin.left + slotWidth / 2 - xAt(0);
   const rightPinnedTranslate = width - margin.right - slotWidth / 2 - xAt(state.allDays.length - 1);
@@ -1459,6 +1476,36 @@ function renderCombinedChart() {
     tempTickValues.push(tick);
   }
   const yTickCount = Math.max(2, tempTickValues.length);
+  const opportunityOverviewMarkup = `
+    <g class="opportunity-overview" aria-label="Opportunity signal forecast window">
+      ${state.scoredDays.map((day, index) => {
+        const signal = signalBandFromScore(day.score);
+        const isActive = index === forecastFocusIndex;
+        const isBestDay = day.date === bestForecastDate;
+        const isToday = day.date === todayDate;
+        const showLabel = !mobile || isActive || isBestDay || isToday;
+        return `
+          <g class="opportunity-day${isActive ? " is-active" : ""}${isBestDay ? " is-best" : ""}" data-opportunity-date="${day.date}">
+            <rect
+              class="opportunity-block ${signal.className}"
+              x="${margin.left + index * forecastSlotWidth + 1.5}"
+              y="${opportunityRibbonY}"
+              rx="7"
+              ry="7"
+              width="${Math.max(7, forecastSlotWidth - 3)}"
+              height="${opportunityRibbonHeight}"
+            ></rect>
+            ${
+              showLabel
+                ? `<text class="opportunity-label" x="${forecastXAt(index)}" y="${opportunityRibbonY + (mobile ? 21 : 20)}" text-anchor="middle">${Math.round(day.score)}</text>`
+                : ""
+            }
+            ${isBestDay ? `<text class="opportunity-best-marker" x="${forecastXAt(index)}" y="${opportunityRibbonY - 3}" text-anchor="middle">Best</text>` : ""}
+          </g>
+        `;
+      }).join("")}
+    </g>
+  `;
 
   elements.combinedChart.innerHTML = `
     <svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Combined weather timeline">
@@ -1505,7 +1552,8 @@ function renderCombinedChart() {
           ? state.allDays
               .map((day, index) => {
                 if (day.date !== bestForecastDate) return "";
-                return `<text class="best-day-medal" x="${xAt(index)}" y="${medalYAt(day.expectedRainfall)}" text-anchor="middle" aria-label="Best day in next 14 days" title="Best day in next 14 days">🥇</text>`;
+                const medalY = Math.max(medalYAt(day.expectedRainfall), opportunityRibbonY + opportunityRibbonHeight + 15);
+                return `<text class="best-day-medal" x="${xAt(index)}" y="${medalY}" text-anchor="middle" aria-label="Best day in next 14 days" title="Best day in next 14 days">🥇</text>`;
               })
               .join("")
           : ""}
@@ -1530,9 +1578,10 @@ function renderCombinedChart() {
         }).join("")}
         </g>
       </g>
-      <line class="target-marker" x1="${markerX}" y1="${margin.top}" x2="${markerX}" y2="${margin.top + plotHeight}"></line>
+      ${opportunityOverviewMarkup}
+      <line class="target-marker" x1="${markerX}" y1="${opportunityRibbonY + opportunityRibbonHeight + 8}" x2="${markerX}" y2="${margin.top + plotHeight}"></line>
       <text class="target-date-label" x="${markerX}" y="${height - 4}" text-anchor="middle">${focusDateShort}</text>
-      <text class="rain-intensity-note" x="${width - margin.right}" y="${margin.top + 12}" text-anchor="end">${rainDescriptor}</text>
+      <text class="rain-intensity-note" x="${width - margin.right}" y="${margin.top + plotHeight - 6}" text-anchor="end">${rainDescriptor}</text>
     </svg>
   `;
   state.chartLayout = {
@@ -1560,10 +1609,52 @@ function renderDaySelector() {
       const parts = formatTimelineLabelParts(day.date);
       const isActive = day.date === state.focusDate;
       const isBestDay = day.date === getBestForecastDate(state.scoredDays);
+      const signal = signalBandFromScore(day.score);
       return `
-        <button class="day-chip${isActive ? " is-active" : ""}" type="button" data-day="${day.date}" aria-pressed="${isActive}">
-          <span>${parts.weekday}${isBestDay ? ' <span class="day-chip-medal" aria-label="Best day in next 14 days" title="Best day in next 14 days">🥇</span>' : ""}</span>
-          <strong>${parts.monthDay}</strong>
+        <button class="day-chip ${signal.className}${isActive ? " is-active" : ""}" type="button" data-day="${day.date}" aria-pressed="${isActive}">
+          <span class="day-chip-date">${parts.weekday}${isBestDay ? ' <span class="day-chip-medal" aria-label="Best day in next 14 days" title="Best day in next 14 days">🥇</span>' : ""}</span>
+          <strong>${signal.shortLabel}</strong>
+          <span class="day-chip-score">${parts.monthDay} · ${formatScore(day.score)}</span>
+        </button>
+      `;
+    })
+    .join("");
+}
+
+function renderMobileForecastList() {
+  if (!elements.mobileForecastList) return;
+  if (!state.scoredDays.length) {
+    elements.mobileForecastList.innerHTML = "";
+    return;
+  }
+  const bestForecastDate = getBestForecastDate(state.scoredDays);
+  elements.mobileForecastList.innerHTML = state.scoredDays
+    .map((day) => {
+      const parts = formatTimelineLabelParts(day.date);
+      const signal = signalBandFromScore(day.score);
+      const isActive = day.date === state.focusDate;
+      const isBestDay = day.date === bestForecastDate;
+      const rain = Number.isFinite(day.expectedRainfall) ? `${day.expectedRainfall.toFixed(day.expectedRainfall >= 10 ? 0 : 1)} mm` : "--";
+      const avgTemp = Number.isFinite(day.meanTemp) ? `${day.meanTemp.toFixed(0)}&deg;C avg` : "--";
+      const minMax =
+        Number.isFinite(day.minTemp) && Number.isFinite(day.maxTemp)
+          ? `${day.minTemp.toFixed(0)}-${day.maxTemp.toFixed(0)}&deg;C`
+          : "--";
+      return `
+        <button class="mobile-forecast-day ${signal.className}${isActive ? " is-active" : ""}" type="button" data-mobile-forecast-day="${day.date}" aria-pressed="${isActive}">
+          <span class="mobile-forecast-date">
+            <span>${parts.weekday}</span>
+            <strong>${parts.monthDay}</strong>
+          </span>
+          <span class="mobile-forecast-main">
+            <span class="mobile-forecast-signal">${signal.label}</span>
+            <span class="mobile-forecast-score">${formatScore(day.score)}${isBestDay ? " · Best window" : ""}</span>
+          </span>
+          <span class="mobile-forecast-weather" aria-label="Weather context">
+            <span>${rain}</span>
+            <span>${avgTemp}</span>
+            <span>${minMax}</span>
+          </span>
         </button>
       `;
     })
@@ -1611,27 +1702,28 @@ function renderSelectedDay() {
       : null;
   const dryDays = selectedDay?.diagnostics?.dryDaysSinceMeaningfulRain;
   const crashPhase = selectedDay?.diagnostics?.crashPhase ?? null;
-  const outlookLabel = outlookLabelFromScore(selectedDay.score);
+  const signal = signalBandFromScore(selectedDay.score);
   const moistureSignal = moistureSignalLabel(moistureResponse);
   const persistence = persistenceLabel({ dryDays, crashPhase });
 
   const label = formatTimelineLabel(selectedDay.date);
-  elements.summaryLabel.textContent = "Foraging conditions confidence";
-  elements.todayScore.textContent = `${selectedDay.score}/100`;
-  elements.todayVerdict.textContent = selectedDay.verdict;
+  elements.summaryLabel.textContent = "Opportunity signal";
+  elements.todayScore.textContent = signal.label;
+  elements.todayVerdict.textContent = `${formatScore(selectedDay.score)} · ${selectedDay.verdict}`;
   elements.confidenceBadge.textContent = selectedDay.confidence;
   elements.analysisTitle.textContent = `${label} timing view`;
-  elements.analysisCopy.textContent = "Select a day to see a simple timing and conditions readout.";
+  elements.analysisCopy.textContent = "Scan the opportunity windows first; select a day for the weather context behind the signal.";
   if (elements.seasonBadge) elements.seasonBadge.textContent = `${selectedDay.season} seasonal context`;
   elements.detailDateLabel.textContent = label;
-  elements.detailScore.textContent = `${selectedDay.score}/100`;
-  elements.detailVerdict.textContent = selectedDay.verdict;
+  elements.detailScore.textContent = signal.label;
+  elements.detailVerdict.textContent = `${formatScore(selectedDay.score)} · ${selectedDay.verdict}`;
   const isBestDay = selectedDay.date === getBestForecastDate(state.scoredDays);
   const topReasons = (selectedDay.reasons ?? []).slice(0, 2).join(" ");
   elements.detailCopy.textContent = `${isBestDay ? "Best day in next 14 days. " : ""}${topReasons}`;
   elements.detailMetrics.innerHTML = `
-    <p class="metric-method-note">Simple readout: outlook, moisture signal, persistence, and recent weather context.</p>
-    <div class="metric-pill"><span>Outlook</span><strong>${outlookLabel}</strong></div>
+    <p class="metric-method-note">Signal readout: probability band first, numeric score second, with weather context underneath.</p>
+    <div class="metric-pill ${signal.className}"><span>Opportunity signal</span><strong>${signal.label}</strong></div>
+    <div class="metric-pill"><span>Model score</span><strong>${formatScore(selectedDay.score)}</strong></div>
     <div class="metric-pill"><span>Moisture signal</span><strong>${moistureSignal}</strong></div>
     <div class="metric-pill"><span>Persistence</span><strong>${persistence}</strong></div>
     <div class="metric-pill"><span>Temp (3d)</span><strong>${Number.isFinite(selectedDay.tempMin3d) ? selectedDay.tempMin3d.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.tempAvg3d) ? selectedDay.tempAvg3d.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.tempMax3d) ? selectedDay.tempMax3d.toFixed(1) : "--"}&deg;C</strong></div>
@@ -1640,6 +1732,7 @@ function renderSelectedDay() {
   renderFeedbackUI();
   renderRegionalStats();
   renderDaySelector();
+  renderMobileForecastList();
 }
 
 function renderRegionalStats() {
@@ -1874,6 +1967,15 @@ elements.daySelector.addEventListener("click", (event) => {
   if (!button) return;
   setFocusDate(button.dataset.day);
 });
+elements.mobileForecastList?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-mobile-forecast-day]");
+  if (!button) return;
+  setFocusDate(button.dataset.mobileForecastDay);
+  const detailPanel = elements.mobileDetailsSection?.querySelector("#detailPanel");
+  if (window.matchMedia("(max-width: 620px)").matches && detailPanel) {
+    detailPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+});
 elements.feedbackOptions?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-feedback-value]");
   if (!button) return;
@@ -1950,6 +2052,11 @@ elements.combinedChart.addEventListener("touchend", (event) => {
   state.touchStartX = null;
 });
 elements.combinedChart.addEventListener("click", (event) => {
+  const opportunityDay = event.target.closest("[data-opportunity-date]");
+  if (opportunityDay?.dataset.opportunityDate) {
+    setFocusDate(opportunityDay.dataset.opportunityDate);
+    return;
+  }
   if (!state.chartLayout || !state.allDays.length) return;
   const rect = elements.combinedChart.getBoundingClientRect();
   const localX = event.clientX - rect.left;
