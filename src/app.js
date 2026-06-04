@@ -775,9 +775,95 @@ async function fetchWeather(latitude, longitude) {
     past_days: "7",
     timezone: "auto",
   });
-  const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`);
-  if (!response.ok) throw new Error(`Weather request failed with ${response.status}`);
-  return response.json();
+  try {
+    return await fetchJsonWithRetry(`https://api.open-meteo.com/v1/forecast?${params}`, {
+      retries: 2,
+      retryDelayMs: 900,
+      errorPrefix: "Weather request failed",
+    });
+  } catch (error) {
+    console.warn("Forecast weather request failed; falling back to recent archive weather.", error);
+    return fetchWeatherArchiveFallback(latitude, longitude);
+  }
+}
+
+function addDaysIso(dateString, days) {
+  const date = new Date(`${dateString}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function delay(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function fetchJsonWithRetry(url, { retries = 0, retryDelayMs = 700, errorPrefix = "Request failed" } = {}) {
+  let lastError = null;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`${errorPrefix} with ${response.status}`);
+      return response.json();
+    } catch (error) {
+      lastError = error;
+      if (attempt < retries) await delay(retryDelayMs * (attempt + 1));
+    }
+  }
+  throw lastError ?? new Error(errorPrefix);
+}
+
+async function fetchWeatherArchiveFallback(latitude, longitude) {
+  const today = new Date().toISOString().slice(0, 10);
+  const startDate = addDaysIso(today, -7);
+  const params = new URLSearchParams({
+    latitude: latitude.toFixed(5),
+    longitude: longitude.toFixed(5),
+    start_date: startDate,
+    end_date: today,
+    daily: "temperature_2m_mean,temperature_2m_max,temperature_2m_min,precipitation_sum",
+    hourly: "temperature_2m,relative_humidity_2m",
+    timezone: "auto",
+  });
+  const archivePayload = await fetchJsonWithRetry(`https://archive-api.open-meteo.com/v1/archive?${params}`, {
+    retries: 1,
+    retryDelayMs: 700,
+    errorPrefix: "Archive weather request failed",
+  });
+  return extendArchiveWeatherPayload(archivePayload, FORECAST_FUTURE_DAYS);
+}
+
+function extendArchiveWeatherPayload(payload, futureDays) {
+  const daily = payload.daily ?? {};
+  const times = [...(daily.time ?? [])];
+  if (!times.length) return payload;
+  const meanTemps = [...(daily.temperature_2m_mean ?? [])];
+  const maxTemps = [...(daily.temperature_2m_max ?? [])];
+  const minTemps = [...(daily.temperature_2m_min ?? [])];
+  const rain = [...(daily.precipitation_sum ?? [])];
+  const recentMean = mean(meanTemps.slice(-3));
+  const recentMax = mean(maxTemps.slice(-3));
+  const recentMin = mean(minTemps.slice(-3));
+  const recentRain = mean(rain.slice(-5));
+  const lastDate = times[times.length - 1];
+  for (let offset = 1; offset <= futureDays; offset += 1) {
+    times.push(addDaysIso(lastDate, offset));
+    meanTemps.push(recentMean);
+    maxTemps.push(recentMax);
+    minTemps.push(recentMin);
+    rain.push(Math.max(0, recentRain * Math.exp(-offset / 4)));
+  }
+  return {
+    ...payload,
+    forecastFallback: true,
+    daily: {
+      ...daily,
+      time: times,
+      temperature_2m_mean: meanTemps,
+      temperature_2m_max: maxTemps,
+      temperature_2m_min: minTemps,
+      precipitation_sum: rain,
+    },
+  };
 }
 
 function isoDaysAgo(days) {
@@ -1865,6 +1951,7 @@ async function analyzeLocation(location, shouldMoveMap = true) {
       fetchWeather(location.latitude, location.longitude),
       fetchRegionalObservationStats(location.latitude, location.longitude, today),
     ]);
+    const usedWeatherFallback = payload.forecastFallback === true;
     state.regionalStats = regionalStats;
     const days = normalizeWeather(payload);
     const todayIndex = findTodayIndex(days);
@@ -1877,7 +1964,10 @@ async function analyzeLocation(location, shouldMoveMap = true) {
     state.focusDate = state.scoredDays[0]?.date ?? null;
     renderCombinedChart();
     renderSelectedDay();
-    setStatus("Updated");
+    setStatus(usedWeatherFallback ? "Limited" : "Updated");
+    if (usedWeatherFallback) {
+      elements.analysisCopy.textContent = "Live forecast is temporarily unavailable; showing recent local weather carried forward as a limited signal.";
+    }
   } catch (error) {
     console.error(error);
     setStatus("Error");
