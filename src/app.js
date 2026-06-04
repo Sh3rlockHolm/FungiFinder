@@ -777,7 +777,7 @@ async function fetchWeather(latitude, longitude) {
   });
   try {
     return await fetchJsonWithRetry(`https://api.open-meteo.com/v1/forecast?${params}`, {
-      retries: 2,
+      retries: 1,
       retryDelayMs: 900,
       errorPrefix: "Weather request failed",
     });
@@ -800,13 +800,17 @@ function delay(ms) {
 async function fetchJsonWithRetry(url, { retries = 0, retryDelayMs = 700, errorPrefix = "Request failed" } = {}) {
   let lastError = null;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 7000);
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: controller.signal });
       if (!response.ok) throw new Error(`${errorPrefix} with ${response.status}`);
       return response.json();
     } catch (error) {
       lastError = error;
       if (attempt < retries) await delay(retryDelayMs * (attempt + 1));
+    } finally {
+      window.clearTimeout(timeout);
     }
   }
   throw lastError ?? new Error(errorPrefix);
