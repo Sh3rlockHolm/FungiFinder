@@ -850,9 +850,11 @@ dd {
 }
 
 .chart-mount {
+  position: relative;
   min-width: 0;
-  min-height: 292px;
+  min-height: 314px;
   overflow: hidden;
+  padding-bottom: 22px;
 }
 
 .mobile-forecast-list {
@@ -865,6 +867,19 @@ dd {
   height: 292px;
 }
 
+.chart-mount::after {
+  content: attr(data-rain-descriptor);
+  position: absolute;
+  right: 0;
+  bottom: 2px;
+  left: 0;
+  color: rgba(20, 32, 24, 0.54);
+  font-size: 0.68rem;
+  line-height: 1.25;
+  text-align: right;
+  pointer-events: none;
+}
+
 .past-window-shade {
   fill: rgba(70, 89, 75, 0.1);
 }
@@ -875,6 +890,11 @@ dd {
 
 .grid-line {
   stroke: rgba(59, 82, 65, 0.2);
+  stroke-width: 1;
+}
+
+.signal-lane-divider {
+  stroke: rgba(59, 82, 65, 0.18);
   stroke-width: 1;
 }
 
@@ -896,12 +916,6 @@ dd {
 
 .x-label-sub {
   fill: rgba(20, 32, 24, 0.45);
-}
-
-.rain-intensity-note {
-  font-size: 10px;
-  font-family: var(--font-body);
-  fill: rgba(20, 32, 24, 0.62);
 }
 
 .combined-bar {
@@ -928,7 +942,7 @@ dd {
 .opportunity-block {
   stroke: rgba(20, 32, 24, 0.2);
   stroke-width: 1;
-  opacity: 0.92;
+  opacity: 0.94;
   cursor: pointer;
 }
 
@@ -976,7 +990,7 @@ dd {
 .opportunity-best-marker {
   fill: rgba(95, 74, 24, 0.82);
   font-family: var(--font-body);
-  font-size: 8px;
+  font-size: 7px;
   font-weight: 800;
   letter-spacing: 0;
   pointer-events: none;
@@ -1693,6 +1707,8 @@ dd {
 
   .chart-mount {
     display: none;
+    min-height: 0;
+    padding-bottom: 0;
   }
 
   .chart-svg {

@@ -52,6 +52,7 @@ const FEEDBACK_DURATION_LABELS = {
 const FEEDBACK_ENV_WEIGHTS_5D = [0.15, 0.25, 0.3, 0.2, 0.1];
 const FEEDBACK_EXPECTATION_MATCH_DELTA_MAX = 15;
 const FORECAST_FUTURE_DAYS = 14;
+const FORECAST_PAST_DAYS = 7;
 const FORECAST_WINDOW_DAYS = FORECAST_FUTURE_DAYS + 1;
 const INATURALIST_RADIUS_KM = 50;
 const RAIN_AXIS_BASE_CAP_MM = 40;
@@ -771,8 +772,8 @@ async function fetchWeather(latitude, longitude) {
     longitude: longitude.toFixed(5),
     daily: "temperature_2m_mean,temperature_2m_max,temperature_2m_min,precipitation_sum",
     hourly: "temperature_2m,relative_humidity_2m",
-    forecast_days: "15",
-    past_days: "7",
+    forecast_days: String(FORECAST_FUTURE_DAYS + 1),
+    past_days: String(FORECAST_PAST_DAYS),
     timezone: "auto",
   });
   try {
@@ -782,8 +783,13 @@ async function fetchWeather(latitude, longitude) {
       errorPrefix: "Weather request failed",
     });
   } catch (error) {
-    console.warn("Forecast weather request failed; falling back to recent archive weather.", error);
-    return fetchWeatherArchiveFallback(latitude, longitude);
+    console.warn("Forecast weather request failed; falling back to previous model run.", error);
+    try {
+      return await fetchWeatherPreviousRunFallback(latitude, longitude);
+    } catch (fallbackError) {
+      console.warn("Previous model run request failed; falling back to MET Norway forecast.", fallbackError);
+      return fetchWeatherMetFallback(latitude, longitude);
+    }
   }
 }
 
@@ -816,10 +822,32 @@ async function fetchJsonWithRetry(url, { retries = 0, retryDelayMs = 700, errorP
   throw lastError ?? new Error(errorPrefix);
 }
 
-async function fetchWeatherArchiveFallback(latitude, longitude) {
+async function fetchWeatherPreviousRunFallback(latitude, longitude) {
+  const params = new URLSearchParams({
+    latitude: latitude.toFixed(5),
+    longitude: longitude.toFixed(5),
+    daily: "temperature_2m_mean,temperature_2m_max,temperature_2m_min,precipitation_sum",
+    hourly: "temperature_2m,relative_humidity_2m",
+    forecast_days: String(FORECAST_FUTURE_DAYS + 1),
+    past_days: String(FORECAST_PAST_DAYS),
+    timezone: "auto",
+  });
+  const payload = await fetchJsonWithRetry(`https://previous-runs-api.open-meteo.com/v1/forecast?${params}`, {
+    retries: 1,
+    retryDelayMs: 700,
+    errorPrefix: "Previous model run weather request failed",
+  });
+  return {
+    ...payload,
+    forecastFallback: true,
+    forecastFallbackSource: "Open-Meteo previous model run",
+  };
+}
+
+async function fetchWeatherMetFallback(latitude, longitude) {
   const today = new Date().toISOString().slice(0, 10);
   const startDate = addDaysIso(today, -7);
-  const params = new URLSearchParams({
+  const archiveParams = new URLSearchParams({
     latitude: latitude.toFixed(5),
     longitude: longitude.toFixed(5),
     start_date: startDate,
@@ -828,45 +856,115 @@ async function fetchWeatherArchiveFallback(latitude, longitude) {
     hourly: "temperature_2m,relative_humidity_2m",
     timezone: "auto",
   });
-  const archivePayload = await fetchJsonWithRetry(`https://archive-api.open-meteo.com/v1/archive?${params}`, {
-    retries: 1,
-    retryDelayMs: 700,
-    errorPrefix: "Archive weather request failed",
+  const metParams = new URLSearchParams({
+    lat: latitude.toFixed(5),
+    lon: longitude.toFixed(5),
   });
-  return extendArchiveWeatherPayload(archivePayload, FORECAST_FUTURE_DAYS);
+  const [archivePayload, metPayload] = await Promise.all([
+    fetchJsonWithRetry(`https://archive-api.open-meteo.com/v1/archive?${archiveParams}`, {
+      retries: 1,
+      retryDelayMs: 700,
+      errorPrefix: "Archive weather request failed",
+    }),
+    fetchJsonWithRetry(`https://api.met.no/weatherapi/locationforecast/2.0/compact?${metParams}`, {
+      retries: 1,
+      retryDelayMs: 700,
+      errorPrefix: "MET forecast request failed",
+    }),
+  ]);
+  return mergeArchiveWithMetForecast(archivePayload, metPayload, today, FORECAST_FUTURE_DAYS);
 }
 
-function extendArchiveWeatherPayload(payload, futureDays) {
-  const daily = payload.daily ?? {};
-  const times = [...(daily.time ?? [])];
-  if (!times.length) return payload;
-  const meanTemps = [...(daily.temperature_2m_mean ?? [])];
-  const maxTemps = [...(daily.temperature_2m_max ?? [])];
-  const minTemps = [...(daily.temperature_2m_min ?? [])];
-  const rain = [...(daily.precipitation_sum ?? [])];
-  const recentMean = mean(meanTemps.slice(-3));
-  const recentMax = mean(maxTemps.slice(-3));
-  const recentMin = mean(minTemps.slice(-3));
-  const recentRain = mean(rain.slice(-5));
-  const lastDate = times[times.length - 1];
-  for (let offset = 1; offset <= futureDays; offset += 1) {
-    times.push(addDaysIso(lastDate, offset));
-    meanTemps.push(recentMean);
-    maxTemps.push(recentMax);
-    minTemps.push(recentMin);
-    rain.push(Math.max(0, recentRain * Math.exp(-offset / 4)));
-  }
+function mergeArchiveWithMetForecast(archivePayload, metPayload, today, futureDays) {
+  const metDaily = dailyWeatherFromMetForecast(metPayload, today, futureDays);
+  if (!metDaily.time.length) throw new Error("MET forecast response did not include daily forecast data.");
+  const archiveDaily = archivePayload.daily ?? {};
+  const archiveTimes = archiveDaily.time ?? [];
+  const pastIndexes = archiveTimes
+    .map((date, index) => ({ date, index }))
+    .filter((entry) => entry.date < today);
+  const daily = {
+    time: [
+      ...pastIndexes.map((entry) => entry.date),
+      ...metDaily.time,
+    ],
+    temperature_2m_mean: [
+      ...pastIndexes.map((entry) => archiveDaily.temperature_2m_mean?.[entry.index] ?? null),
+      ...metDaily.temperature_2m_mean,
+    ],
+    temperature_2m_max: [
+      ...pastIndexes.map((entry) => archiveDaily.temperature_2m_max?.[entry.index] ?? null),
+      ...metDaily.temperature_2m_max,
+    ],
+    temperature_2m_min: [
+      ...pastIndexes.map((entry) => archiveDaily.temperature_2m_min?.[entry.index] ?? null),
+      ...metDaily.temperature_2m_min,
+    ],
+    precipitation_sum: [
+      ...pastIndexes.map((entry) => archiveDaily.precipitation_sum?.[entry.index] ?? 0),
+      ...metDaily.precipitation_sum,
+    ],
+  };
   return {
-    ...payload,
+    ...archivePayload,
     forecastFallback: true,
-    daily: {
-      ...daily,
-      time: times,
-      temperature_2m_mean: meanTemps,
-      temperature_2m_max: maxTemps,
-      temperature_2m_min: minTemps,
-      precipitation_sum: rain,
-    },
+    forecastFallbackSource: "MET Norway",
+    daily,
+    hourly: mergeArchiveHourlyWithMetHourly(archivePayload.hourly ?? {}, metDaily.hourly, today),
+  };
+}
+
+function dailyWeatherFromMetForecast(payload, today, futureDays) {
+  const buckets = new Map();
+  const endDate = addDaysIso(today, futureDays);
+  for (const entry of payload.properties?.timeseries ?? []) {
+    const time = entry.time;
+    const date = time?.slice(0, 10);
+    if (!date || date < today || date > endDate) continue;
+    if (!buckets.has(date)) buckets.set(date, { temps: [], rhs: [], rain: 0, hourlyTime: [], hourlyTemp: [], hourlyRh: [] });
+    const bucket = buckets.get(date);
+    const details = entry.data?.instant?.details ?? {};
+    const temp = details.air_temperature;
+    const rh = details.relative_humidity;
+    if (Number.isFinite(temp)) bucket.temps.push(temp);
+    if (Number.isFinite(rh)) bucket.rhs.push(rh);
+    bucket.hourlyTime.push(time.slice(0, 16));
+    bucket.hourlyTemp.push(Number.isFinite(temp) ? temp : null);
+    bucket.hourlyRh.push(Number.isFinite(rh) ? rh : null);
+    const rain1h = entry.data?.next_1_hours?.details?.precipitation_amount;
+    const rain6h = entry.data?.next_6_hours?.details?.precipitation_amount;
+    if (Number.isFinite(rain1h)) bucket.rain += rain1h;
+    else if (Number.isFinite(rain6h)) bucket.rain += rain6h;
+  }
+  const dates = [...buckets.keys()].sort().slice(0, futureDays + 1);
+  const hourly = { time: [], temperature_2m: [], relative_humidity_2m: [] };
+  dates.forEach((date) => {
+    const bucket = buckets.get(date);
+    hourly.time.push(...bucket.hourlyTime);
+    hourly.temperature_2m.push(...bucket.hourlyTemp);
+    hourly.relative_humidity_2m.push(...bucket.hourlyRh);
+  });
+  return {
+    time: dates,
+    temperature_2m_mean: dates.map((date) => mean(buckets.get(date).temps)),
+    temperature_2m_max: dates.map((date) => maxOrNull(buckets.get(date).temps) ?? mean(buckets.get(date).temps)),
+    temperature_2m_min: dates.map((date) => minOrNull(buckets.get(date).temps) ?? mean(buckets.get(date).temps)),
+    precipitation_sum: dates.map((date) => buckets.get(date).rain),
+    hourly,
+  };
+}
+
+function mergeArchiveHourlyWithMetHourly(archiveHourly, metHourly, today) {
+  const archiveTime = archiveHourly.time ?? [];
+  const archiveTemp = archiveHourly.temperature_2m ?? [];
+  const archiveRh = archiveHourly.relative_humidity_2m ?? [];
+  const pastIndexes = archiveTime
+    .map((time, index) => ({ time, index }))
+    .filter((entry) => entry.time?.slice(0, 10) < today);
+  return {
+    time: [...pastIndexes.map((entry) => entry.time), ...(metHourly.time ?? [])],
+    temperature_2m: [...pastIndexes.map((entry) => archiveTemp[entry.index] ?? null), ...(metHourly.temperature_2m ?? [])],
+    relative_humidity_2m: [...pastIndexes.map((entry) => archiveRh[entry.index] ?? null), ...(metHourly.relative_humidity_2m ?? [])],
   };
 }
 
@@ -1501,10 +1599,13 @@ function renderCombinedChart() {
   const margin = mobile
     ? { top: 14, right: 36, bottom: 62, left: 36 }
     : tablet
-      ? { top: 16, right: 62, bottom: 54, left: 58 }
-      : { top: 18, right: 88, bottom: 42, left: 74 };
+      ? { top: 16, right: 62, bottom: 60, left: 58 }
+      : { top: 18, right: 88, bottom: 58, left: 74 };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
+  const signalLaneHeight = mobile ? 44 : 42;
+  const weatherTop = margin.top + signalLaneHeight;
+  const weatherHeight = plotHeight - signalLaneHeight;
   const visibleSlots = 15;
   const slotWidth = plotWidth / visibleSlots;
   const tempValues = state.allDays.flatMap((day) => [day.minTemp, day.meanTemp, day.maxTemp]);
@@ -1519,9 +1620,10 @@ function renderCombinedChart() {
   const rainDescriptor = mobile
     ? `L<=${rainBands.lightMax} M<=${rainBands.mediumMax} H<=${rainBands.heavyMax} X>${rainBands.heavyMax} mm`
     : rainBands.descriptor;
+  const chartDescriptor = rainDescriptor;
   const barWidth = Math.max(14, slotWidth - 10);
-  const opportunityRibbonHeight = mobile ? 34 : 30;
-  const opportunityRibbonY = margin.top + (mobile ? 6 : 8);
+  const opportunityRibbonHeight = mobile ? 30 : 28;
+  const opportunityRibbonY = margin.top + (mobile ? 6 : 7);
   const centerIndex = 7;
   const todayDate = new Date().toISOString().slice(0, 10);
   const focusIndex = state.allDays.findIndex((day) => day.date === state.focusDate);
@@ -1534,15 +1636,8 @@ function renderCombinedChart() {
 
   const xAt = (index) => margin.left + slotWidth / 2 + index * slotWidth;
   const barXAt = (index) => xAt(index) - barWidth / 2;
-  const forecastSlotWidth = plotWidth / Math.max(1, state.scoredDays.length);
-  const forecastXAt = (index) => margin.left + forecastSlotWidth / 2 + index * forecastSlotWidth;
-  const yTempAt = (value) => margin.top + plotHeight - ((value - tempMin) / Math.max(tempMax - tempMin, 8)) * plotHeight;
-  const yRainAt = (value) => margin.top + plotHeight - (value / rainTop) * plotHeight;
-  const medalYAt = (value) => {
-    const candidate = yRainAt(value) - (mobile ? 14 : 10);
-    const minY = margin.top + (mobile ? 22 : 16);
-    return Math.max(minY, candidate);
-  };
+  const yTempAt = (value) => weatherTop + weatherHeight - ((value - tempMin) / Math.max(tempMax - tempMin, 8)) * weatherHeight;
+  const yRainAt = (value) => weatherTop + weatherHeight - (value / rainTop) * weatherHeight;
   const freezingLineY = yTempAt(0);
   const showFreezingLine = tempMin < 0 && tempMax >= 0;
   const focusDateShort = state.focusDate ? formatShortDate(state.focusDate) : "";
@@ -1550,7 +1645,7 @@ function renderCombinedChart() {
   const minPoints = state.allDays.map((day, index) => ({ x: xAt(index), y: yTempAt(day.minTemp) }));
   const avgPoints = state.allDays.map((day, index) => ({ x: xAt(index), y: yTempAt(day.meanTemp) }));
   const maxPoints = state.allDays.map((day, index) => ({ x: xAt(index), y: yTempAt(day.maxTemp) }));
-  const forecastFocusIndex = state.scoredDays.findIndex((day) => day.date === state.focusDate);
+  const scoredDateSet = new Set(state.scoredDays.map((day) => day.date));
   const centerX = xAt(centerIndex);
   const leftPinnedTranslate = margin.left + slotWidth / 2 - xAt(0);
   const rightPinnedTranslate = width - margin.right - slotWidth / 2 - xAt(state.allDays.length - 1);
@@ -1566,37 +1661,6 @@ function renderCombinedChart() {
     tempTickValues.push(tick);
   }
   const yTickCount = Math.max(2, tempTickValues.length);
-  const opportunityOverviewMarkup = `
-    <g class="opportunity-overview" aria-label="Opportunity signal forecast window">
-      ${state.scoredDays.map((day, index) => {
-        const signal = signalBandFromScore(day.score);
-        const isActive = index === forecastFocusIndex;
-        const isBestDay = day.date === bestForecastDate;
-        const isToday = day.date === todayDate;
-        const showLabel = !mobile || isActive || isBestDay || isToday;
-        return `
-          <g class="opportunity-day${isActive ? " is-active" : ""}${isBestDay ? " is-best" : ""}" data-opportunity-date="${day.date}">
-            <rect
-              class="opportunity-block ${signal.className}"
-              x="${margin.left + index * forecastSlotWidth + 1.5}"
-              y="${opportunityRibbonY}"
-              rx="7"
-              ry="7"
-              width="${Math.max(7, forecastSlotWidth - 3)}"
-              height="${opportunityRibbonHeight}"
-            ></rect>
-            ${
-              showLabel
-                ? `<text class="opportunity-label" x="${forecastXAt(index)}" y="${opportunityRibbonY + (mobile ? 21 : 20)}" text-anchor="middle">${Math.round(day.score)}</text>`
-                : ""
-            }
-            ${isBestDay ? `<text class="opportunity-best-marker" x="${forecastXAt(index)}" y="${opportunityRibbonY - 3}" text-anchor="middle">Best</text>` : ""}
-          </g>
-        `;
-      }).join("")}
-    </g>
-  `;
-
   elements.combinedChart.innerHTML = `
     <svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Combined weather timeline">
       <defs>
@@ -1606,7 +1670,7 @@ function renderCombinedChart() {
       </defs>
       ${tempTickValues.map((tempValue, index) => {
         const ratio = yTickCount === 1 ? 0 : index / (yTickCount - 1);
-        const y = margin.top + ratio * plotHeight;
+        const y = weatherTop + ratio * weatherHeight;
         const rainValue = Math.max(0, Math.round((1 - ratio) * rainTop));
         return `
           <line class="grid-line" x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}"></line>
@@ -1620,13 +1684,35 @@ function renderCombinedChart() {
       <text class="freezing-label" x="${margin.left - 16}" y="${freezingLineY - 6}" text-anchor="end">0 C</text>`
           : ""
       }
+      <line class="signal-lane-divider" x1="${margin.left}" y1="${weatherTop}" x2="${width - margin.right}" y2="${weatherTop}"></line>
       <g clip-path="url(#${clipId})">
         <g class="combined-chart-track" style="transform: translateX(${fromTranslate}px); transform-box: fill-box; transform-origin: center;">
           ${
             pastShadeTrackX !== null
-              ? `<rect class="past-window-shade" x="${xAt(0) - slotWidth / 2}" y="${margin.top}" width="${Math.max(0, pastShadeTrackX - (xAt(0) - slotWidth / 2))}" height="${plotHeight}"></rect>`
+              ? `<rect class="past-window-shade" x="${xAt(0) - slotWidth / 2}" y="${weatherTop}" width="${Math.max(0, pastShadeTrackX - (xAt(0) - slotWidth / 2))}" height="${weatherHeight}"></rect>`
               : ""
           }
+        ${state.allDays.map((day, index) => {
+          if (!scoredDateSet.has(day.date)) return "";
+          const signal = signalBandFromScore(day.score);
+          const isActive = index === focusIndex;
+          const isBestDay = day.date === bestForecastDate;
+          return `
+            <g class="opportunity-day${isActive ? " is-active" : ""}${isBestDay ? " is-best" : ""}" data-opportunity-date="${day.date}">
+              <rect
+                class="opportunity-block ${signal.className}"
+                x="${xAt(index) - slotWidth / 2 + 2}"
+                y="${opportunityRibbonY}"
+                rx="7"
+                ry="7"
+                width="${Math.max(7, slotWidth - 4)}"
+                height="${opportunityRibbonHeight}"
+              ></rect>
+              <text class="opportunity-label" x="${xAt(index)}" y="${opportunityRibbonY + (mobile ? 20 : 19)}" text-anchor="middle">${Math.round(day.score)}</text>
+              ${isBestDay ? `<text class="opportunity-best-marker" x="${xAt(index)}" y="${opportunityRibbonY - 3}" text-anchor="middle">Best</text>` : ""}
+            </g>
+          `;
+        }).join("")}
         ${state.allDays.map((day, index) => `
           <rect
             class="${index === focusIndex ? "combined-bar selected" : "combined-bar"}${day.date === bestForecastDate ? " best-day" : ""}"
@@ -1638,11 +1724,11 @@ function renderCombinedChart() {
             height="${Math.max(2, margin.top + plotHeight - yRainAt(day.expectedRainfall))}"
           ></rect>
         `).join("")}
-        ${bestForecastDate
+        ${false && bestForecastDate
           ? state.allDays
               .map((day, index) => {
                 if (day.date !== bestForecastDate) return "";
-                const medalY = Math.max(medalYAt(day.expectedRainfall), opportunityRibbonY + opportunityRibbonHeight + 15);
+                const medalY = weatherTop + 18;
                 return `<text class="best-day-medal" x="${xAt(index)}" y="${medalY}" text-anchor="middle" aria-label="Best day in next 14 days" title="Best day in next 14 days">🥇</text>`;
               })
               .join("")
@@ -1668,12 +1754,11 @@ function renderCombinedChart() {
         }).join("")}
         </g>
       </g>
-      ${opportunityOverviewMarkup}
-      <line class="target-marker" x1="${markerX}" y1="${opportunityRibbonY + opportunityRibbonHeight + 8}" x2="${markerX}" y2="${margin.top + plotHeight}"></line>
+      <line class="target-marker" x1="${markerX}" y1="${weatherTop}" x2="${markerX}" y2="${margin.top + plotHeight}"></line>
       <text class="target-date-label" x="${markerX}" y="${height - 4}" text-anchor="middle">${focusDateShort}</text>
-      <text class="rain-intensity-note" x="${width - margin.right}" y="${margin.top + plotHeight - 6}" text-anchor="end">${rainDescriptor}</text>
     </svg>
   `;
+  elements.combinedChart.dataset.rainDescriptor = chartDescriptor;
   state.chartLayout = {
     focusIndex,
     slotWidth,
@@ -1970,7 +2055,10 @@ async function analyzeLocation(location, shouldMoveMap = true) {
     renderSelectedDay();
     setStatus(usedWeatherFallback ? "Limited" : "Updated");
     if (usedWeatherFallback) {
-      elements.analysisCopy.textContent = "Live forecast is temporarily unavailable; showing recent local weather carried forward as a limited signal.";
+      elements.analysisCopy.textContent =
+        payload.forecastFallbackSource === "MET Norway"
+          ? "Primary forecast is temporarily unavailable; showing real MET Norway forecast data with recent archive context."
+          : "Primary forecast is temporarily unavailable; showing the latest available Open-Meteo model run.";
     }
   } catch (error) {
     console.error(error);
