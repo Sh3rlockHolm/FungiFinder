@@ -494,12 +494,57 @@ dd {
   box-shadow: var(--shadow-soft);
 }
 
-#map {
+#map,
+.map-pane {
   position: relative;
+}
+
+#map {
   min-height: 220px;
   overflow: hidden;
   isolation: isolate;
   background: linear-gradient(180deg, #d7e4d6, #c8dacc);
+}
+
+.map-legend {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 900;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(320px, calc(100% - 28px));
+  padding: 10px 12px;
+  border: 1px solid rgba(31, 95, 45, 0.22);
+  border-radius: 14px;
+  background: rgba(247, 244, 236, 0.82);
+  box-shadow: 0 12px 24px rgba(31, 41, 28, 0.12);
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+.map-legend strong {
+  display: block;
+  color: var(--ink);
+  font-size: 0.82rem;
+  line-height: 1.2;
+}
+
+.map-legend span {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
+
+.map-legend-swatch {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #1f5f2d;
+  border-radius: 50%;
+  background: rgba(97, 184, 90, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
 }
 
 .leaflet-container {

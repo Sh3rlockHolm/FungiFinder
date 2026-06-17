@@ -9,6 +9,8 @@ export const MODEL_METADATA = {
   featureSchemaHash: "ff-v8_1_6-humidity-carryover-midrange-20260528",
   targetDefinition: "P(harvestable_foraging_success_local_window_2_4d)",
   radiusKm: 50,
+  inatTaxonId: 50814,
+  inatTaxonLabel: "Agaricomycetes",
 };
 
 export const SCORING_CONFIG = {

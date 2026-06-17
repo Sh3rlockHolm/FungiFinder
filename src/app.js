@@ -6,6 +6,7 @@ const state = {
   focusDate: null,
   map: null,
   marker: null,
+  radiusCircle: null,
   regionalStats: null,
   scoredDays: [],
   selected: { latitude: 48.0000, longitude: 8.0000, label: "Black Forest, Germany" },
@@ -54,7 +55,9 @@ const FEEDBACK_EXPECTATION_MATCH_DELTA_MAX = 15;
 const FORECAST_FUTURE_DAYS = 14;
 const FORECAST_PAST_DAYS = 7;
 const FORECAST_WINDOW_DAYS = FORECAST_FUTURE_DAYS + 1;
-const INATURALIST_RADIUS_KM = 50;
+const INATURALIST_RADIUS_KM = MODEL_METADATA.radiusKm ?? 50;
+const INATURALIST_TAXON_ID = MODEL_METADATA.inatTaxonId ?? 50814;
+const INATURALIST_TAXON_LABEL = MODEL_METADATA.inatTaxonLabel ?? "Agaricomycetes";
 const RAIN_AXIS_BASE_CAP_MM = 40;
 const RAIN_AXIS_STEP_MM = 10;
 const LOCKED_RAIN_BANDS = {
@@ -974,9 +977,9 @@ function isoDaysAgo(days) {
   return date.toISOString().slice(0, 10);
 }
 
-async function fetchINaturalistCount(latitude, longitude, extraParams = {}) {
-  const params = new URLSearchParams({
-    iconic_taxa: "Fungi",
+function buildINaturalistParams(latitude, longitude, extraParams = {}) {
+  return new URLSearchParams({
+    taxon_id: String(INATURALIST_TAXON_ID),
     lat: latitude.toFixed(5),
     lng: longitude.toFixed(5),
     per_page: "1",
@@ -984,6 +987,10 @@ async function fetchINaturalistCount(latitude, longitude, extraParams = {}) {
     verifiable: "true",
     ...extraParams,
   });
+}
+
+async function fetchINaturalistCount(latitude, longitude, extraParams = {}) {
+  const params = buildINaturalistParams(latitude, longitude, extraParams);
   const response = await fetch(`https://api.inaturalist.org/v1/observations?${params}`);
   if (!response.ok) throw new Error(`iNaturalist request failed with ${response.status}`);
   const payload = await response.json();
@@ -991,13 +998,8 @@ async function fetchINaturalistCount(latitude, longitude, extraParams = {}) {
 }
 
 async function fetchINaturalistRecentResearch(latitude, longitude, extraParams = {}) {
-  const params = new URLSearchParams({
-    iconic_taxa: "Fungi",
-    lat: latitude.toFixed(5),
-    lng: longitude.toFixed(5),
+  const params = buildINaturalistParams(latitude, longitude, {
     per_page: "8",
-    radius: String(INATURALIST_RADIUS_KM),
-    verifiable: "true",
     quality_grade: "research",
     order: "desc",
     order_by: "observed_on",
@@ -1047,13 +1049,8 @@ async function fetchINaturalistRecentResearch(latitude, longitude, extraParams =
 }
 
 async function fetchINaturalistRecentNonResearch(latitude, longitude, extraParams = {}) {
-  const params = new URLSearchParams({
-    iconic_taxa: "Fungi",
-    lat: latitude.toFixed(5),
-    lng: longitude.toFixed(5),
+  const params = buildINaturalistParams(latitude, longitude, {
     per_page: "200",
-    radius: String(INATURALIST_RADIUS_KM),
-    verifiable: "true",
     quality_grade: "needs_id",
     order: "desc",
     order_by: "observed_on",
@@ -1569,6 +1566,10 @@ function setSelectedLocation(latitude, longitude, label, shouldMoveMap = true) {
   elements.placeLabel.textContent = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
   updateGoogleMapsLink(latitude, longitude);
   if (state.marker) state.marker.setLatLng([latitude, longitude]);
+  if (state.radiusCircle) {
+    state.radiusCircle.setLatLng([latitude, longitude]);
+    state.radiusCircle.setRadius(INATURALIST_RADIUS_KM * 1000);
+  }
   if (shouldMoveMap && state.map) state.map.setView([latitude, longitude], Math.max(state.map.getZoom(), 9));
 }
 
@@ -1924,10 +1925,6 @@ function renderRegionalStats() {
   }
   elements.regionalConfidence.textContent = "";
   elements.regionalConfidence.hidden = true;
-  elements.regionalMetrics.innerHTML = `
-    <div class="metric-pill"><span>Research-grade (14d)</span><strong>${stats.researchRecent14Total ?? stats.researchRecent14Observations}</strong></div>
-    <div class="metric-pill"><span>Unique species</span><strong>${(stats.uniqueResearchObservations ?? []).length}</strong></div>
-  `;
   const total = (stats.uniqueResearchObservations ?? []).length;
   const pageSize = 8;
   const pageCount = Math.max(1, Math.min(10, Math.ceil(total / pageSize)));
@@ -1938,7 +1935,13 @@ function renderRegionalStats() {
     <span class="chart-unit">Page ${currentPage} / ${pageCount}</span>
     <button class="ghost-button" type="button" data-regional-page="${Math.min(pageCount, currentPage + 1)}" ${currentPage >= pageCount ? "disabled" : ""}>Next</button>
   `;
-  elements.regionalCopy.textContent = "Nearby iNaturalist observations are context only; they support confidence and do not drive the timing score.";
+  elements.regionalMetrics.innerHTML = `
+    <div class="metric-pill"><span>iNat radius</span><strong>${INATURALIST_RADIUS_KM} km</strong></div>
+    <div class="metric-pill"><span>Taxon scope</span><strong>${INATURALIST_TAXON_LABEL}</strong></div>
+    <div class="metric-pill"><span>Research-grade (14d)</span><strong>${stats.researchRecent14Total ?? stats.researchRecent14Observations}</strong></div>
+    <div class="metric-pill"><span>Unique species</span><strong>${(stats.uniqueResearchObservations ?? []).length}</strong></div>
+  `;
+  elements.regionalCopy.textContent = `Nearby iNaturalist ${INATURALIST_TAXON_LABEL} observations within ${INATURALIST_RADIUS_KM} km are context only; they support confidence and do not drive the timing score.`;
 }
 
 function moveFocus(step) {
@@ -2086,6 +2089,16 @@ function initMap() {
   state.marker = L.marker([state.selected.latitude, state.selected.longitude], {
     draggable: true,
     icon: markerIcon,
+  }).addTo(state.map);
+
+  state.radiusCircle = L.circle([state.selected.latitude, state.selected.longitude], {
+    radius: INATURALIST_RADIUS_KM * 1000,
+    color: "#1f5f2d",
+    weight: 2,
+    opacity: 0.95,
+    fillColor: "#61b85a",
+    fillOpacity: 0.18,
+    interactive: false,
   }).addTo(state.map);
 
   state.map.on("click", (event) => {

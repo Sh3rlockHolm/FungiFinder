@@ -109,13 +109,25 @@ This is retained for historical context only.
 
 ## Empirical Regional Signal (v2)
 
-For the selected region, the app queries nearby iNaturalist fungi observations
-within a 50 km radius:
+For the selected region, the app queries nearby iNaturalist observations in the
+mushroom-forming fungal class `Agaricomycetes` within a 50 km radius:
 
 - recent 7-day observation count
 - recent 14-day observation count
 - recent 14-day research-grade count
 - current-month regional activity baseline
+- observation ID, observation URL, observed date, taxon names, photo URL
+- quality grade plus identification agreement counts for ranking and display
+
+iNaturalist search filters in use:
+
+- `taxon_id=50814` to target `Agaricomycetes` and its descendants
+- `radius=50` to make the regional scope explicit
+- `verifiable=true` and quality-grade filters for the regional cards
+
+If we later need to carve out more non-mushroom noise, `without_taxon_id=` is the
+taxonomy-based exclusion path iNaturalist supports. That is better than keyword
+matching because it works on actual descendant clades, not text labels.
 
 This produces a conservative regional activity score and data-confidence label.
 If observation data is sparse or unavailable, confidence drops and weather timing

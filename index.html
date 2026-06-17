@@ -84,6 +84,13 @@
 
       <section class="map-pane" aria-label="Map and daily prognosis">
         <div id="map" aria-label="Select a map location"></div>
+        <div class="map-legend" aria-label="iNaturalist radius legend">
+          <span class="map-legend-swatch" aria-hidden="true"></span>
+          <div>
+            <strong>iNaturalist search radius</strong>
+            <span>50 km around the selected point</span>
+          </div>
+        </div>
         <section class="forecast-panel" aria-label="Daily mushroom prognosis">
           <div class="forecast-heading">
             <div>
@@ -173,7 +180,7 @@
                 <div class="regional-grid" id="regionalMetrics"></div>
                 <div class="regional-tiles" id="regionalTiles" aria-label="Recent nearby research observations"></div>
                 <div class="regional-pagination" id="regionalPagination"></div>
-                <p class="detail-copy" id="regionalCopy">Nearby iNaturalist observations are context only; they support confidence and do not drive the timing score.</p>
+                <p class="detail-copy" id="regionalCopy">Nearby iNaturalist Agaricomycetes observations within 50 km are context only; they support confidence and do not drive the timing score.</p>
               </section>
             </section>
           </section>
