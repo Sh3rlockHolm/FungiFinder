@@ -599,7 +599,18 @@ function rangeScore(value, bestLow, bestHigh, hardLow, hardHigh) {
 }
 
 function setStatus(message) {
-  elements.dataStatus.textContent = message;
+  const labels = {
+    Ready: "Ready",
+    Loading: "Updating",
+    Updated: "Updated",
+    Limited: "Backup forecast",
+    Error: "Unavailable",
+    "Not found": "Not found",
+    Locating: "Locating",
+    Denied: "Location denied",
+    "No GPS": "No location",
+  };
+  elements.dataStatus.textContent = labels[message] ?? message;
 }
 
 function updateGoogleMapsLink(latitude, longitude) {
@@ -2137,16 +2148,11 @@ function renderSelectedDay() {
         value: moistureSignal,
         helper: "How helpful recent wet weather has been.",
       }),
-      metricPillMarkup({
-        label: "Window strength",
-        value: persistence,
-        helper: "Whether the pattern feels fresh, steady, or fading.",
-      }),
     ].join("");
   }
   elements.confidenceBadge.textContent = selectedDay.confidence;
   elements.analysisTitle.textContent = `${label}: compare the nearby window`;
-  elements.analysisCopy.textContent = "Start with the strongest nearby days, then open the selected day for weather context.";
+  elements.analysisCopy.textContent = "Check today first, then compare the next best nearby days.";
   if (elements.seasonBadge) elements.seasonBadge.textContent = `${selectedDay.season} seasonal context`;
 
   elements.detailDateLabel.textContent = label;
