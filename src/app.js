@@ -3,6 +3,10 @@ import { MODEL_METADATA, SCORING_CONFIG, applyBiologicalPersistence, buildModelF
 const state = {
   allDays: [],
   animationFromIndex: null,
+  expandedMap: null,
+  expandedMarker: null,
+  expandedRadiusCircle: null,
+  expandedObservationLayer: null,
   focusDate: null,
   map: null,
   marker: null,
@@ -60,7 +64,6 @@ const FORECAST_WINDOW_DAYS = FORECAST_FUTURE_DAYS + 1;
 const DEFAULT_INATURALIST_RADIUS_KM = MODEL_METADATA.radiusKm ?? 50;
 const INATURALIST_RADIUS_OPTIONS_KM = [25, 50, 100];
 const INATURALIST_RADIUS_STORAGE_KEY = "fungifinder_inat_radius_km_v1";
-const OBSERVATION_LAYER_STORAGE_KEY = "fungifinder_show_observation_layer_v1";
 const INATURALIST_TAXON_ID = MODEL_METADATA.inatTaxonId ?? 50814;
 const RAIN_AXIS_BASE_CAP_MM = 40;
 const RAIN_AXIS_STEP_MM = 10;
@@ -77,6 +80,7 @@ const HUMIDITY_CLASS_THRESHOLDS = {
 const elements = {
   analysisCopy: document.querySelector("#analysisCopy"),
   analysisTitle: document.querySelector("#analysisTitle"),
+  closeMapModalButton: document.querySelector("#closeMapModalButton"),
   combinedChart: document.querySelector("#combinedChart"),
   confidenceBadge: document.querySelector("#confidenceBadge"),
   coordinateForm: document.querySelector("#coordinateForm"),
@@ -90,9 +94,12 @@ const elements = {
   detailStatusBadge: document.querySelector("#detailStatusBadge"),
   detailStatusNote: document.querySelector("#detailStatusNote"),
   detailVerdict: document.querySelector("#detailVerdict"),
+  expandMapButton: document.querySelector("#expandMapButton"),
+  expandedMap: document.querySelector("#expandedMap"),
   locationInput: document.querySelector("#locationInput"),
   locationSuggestions: document.querySelector("#locationSuggestions"),
   inatRadiusSelect: document.querySelector("#inatRadiusSelect"),
+  mapModal: document.querySelector("#mapModal"),
   mobileTabs: document.querySelector("#mobileTabs"),
   mapRadiusCopy: document.querySelector("[data-map-radius-copy]"),
   mobileOverviewSection: document.querySelector("#mobileOverviewSection"),
@@ -113,8 +120,10 @@ const elements = {
   imageModalTitle: document.querySelector("#imageModalTitle"),
   sampleButton: document.querySelector("#sampleButton"),
   seasonBadge: document.querySelector("#seasonBadge"),
-  observationLayerToggleButton: document.querySelector("#observationLayerToggleButton"),
   summaryLabel: document.querySelector("#summaryLabel"),
+  summaryDate: document.querySelector("#summaryDate"),
+  summaryExplanation: document.querySelector("#summaryExplanation"),
+  summaryMetrics: document.querySelector("#summaryMetrics"),
   todayScore: document.querySelector("#todayScore"),
   todayVerdict: document.querySelector("#todayVerdict"),
   useLocationButton: document.querySelector("#useLocationButton"),
@@ -149,26 +158,8 @@ function savePreferredInaturalistRadiusKm(radiusKm) {
   }
 }
 
-function loadObservationLayerPreference() {
-  try {
-    const stored = localStorage.getItem(OBSERVATION_LAYER_STORAGE_KEY);
-    if (stored === null) return true;
-    return stored === "true";
-  } catch {
-    return true;
-  }
-}
-
-function saveObservationLayerPreference(enabled) {
-  try {
-    localStorage.setItem(OBSERVATION_LAYER_STORAGE_KEY, enabled ? "true" : "false");
-  } catch (error) {
-    console.error("Failed to save mushroom map preference", error);
-  }
-}
-
 state.inatRadiusKm = loadPreferredInaturalistRadiusKm();
-state.showObservationLayer = loadObservationLayerPreference();
+state.showObservationLayer = true;
 
 function loadFeedbackLog() {
   try {
@@ -1428,36 +1419,47 @@ function closeObservationModal() {
   }, 220);
 }
 
+function createObservationLayer(map) {
+  return map ? L.layerGroup().addTo(map) : null;
+}
+
+function buildObservationMarker(observation) {
+  const markerSize = observation.photo ? 30 : 24;
+  const photoUrl = observation.photo || "";
+  const safePhotoUrl = encodeURI(photoUrl);
+  const markerHtml = observation.photo
+    ? `<div class="map-observation-marker has-photo" style="background-image:url('${safePhotoUrl}')"></div>`
+    : `<div class="map-observation-marker no-photo"></div>`;
+  const icon = L.divIcon({
+    className: "map-observation-icon",
+    html: markerHtml,
+    iconSize: [markerSize, markerSize],
+    iconAnchor: [markerSize / 2, markerSize / 2],
+  });
+  const marker = L.marker([observation.latitude, observation.longitude], {
+    icon,
+    keyboard: false,
+  });
+  marker.on("click", () => openObservationModal(observation));
+  return marker;
+}
+
 function renderObservationMapLayer(observations) {
   if (!state.map) return;
-  if (!state.observationLayer) {
-    state.observationLayer = L.layerGroup().addTo(state.map);
+  if (!state.observationLayer) state.observationLayer = createObservationLayer(state.map);
+  if (state.expandedMap && !state.expandedObservationLayer) {
+    state.expandedObservationLayer = createObservationLayer(state.expandedMap);
   }
-  state.observationLayer.clearLayers();
+  state.observationLayer?.clearLayers();
+  state.expandedObservationLayer?.clearLayers();
   if (!state.showObservationLayer) return;
   const markerCount = Math.min(observations.length, 40);
   observations
     .slice(0, markerCount)
     .filter((observation) => Number.isFinite(observation.latitude) && Number.isFinite(observation.longitude))
     .forEach((observation) => {
-      const markerSize = observation.photo ? 30 : 24;
-      const photoUrl = observation.photo || "";
-      const safePhotoUrl = encodeURI(photoUrl);
-      const markerHtml = observation.photo
-        ? `<div class="map-observation-marker has-photo" style="background-image:url('${safePhotoUrl}')"></div>`
-        : `<div class="map-observation-marker no-photo"></div>`;
-      const icon = L.divIcon({
-        className: "map-observation-icon",
-        html: markerHtml,
-        iconSize: [markerSize, markerSize],
-        iconAnchor: [markerSize / 2, markerSize / 2],
-      });
-      const marker = L.marker([observation.latitude, observation.longitude], {
-        icon,
-        keyboard: false,
-      });
-      marker.on("click", () => openObservationModal(observation));
-      marker.addTo(state.observationLayer);
+      buildObservationMarker(observation).addTo(state.observationLayer);
+      if (state.expandedObservationLayer) buildObservationMarker(observation).addTo(state.expandedObservationLayer);
     });
 }
 
@@ -1709,11 +1711,17 @@ function setSelectedLocation(latitude, longitude, label, shouldMoveMap = true) {
   elements.placeLabel.textContent = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
   updateGoogleMapsLink(latitude, longitude);
   if (state.marker) state.marker.setLatLng([latitude, longitude]);
+  if (state.expandedMarker) state.expandedMarker.setLatLng([latitude, longitude]);
   if (state.radiusCircle) {
     state.radiusCircle.setLatLng([latitude, longitude]);
     state.radiusCircle.setRadius(state.inatRadiusKm * 1000);
   }
+  if (state.expandedRadiusCircle) {
+    state.expandedRadiusCircle.setLatLng([latitude, longitude]);
+    state.expandedRadiusCircle.setRadius(state.inatRadiusKm * 1000);
+  }
   if (state.map) fitMapToRadius();
+  if (state.expandedMap) fitExpandedMapToRadius();
 }
 
 function setInaturalistRadiusKm(radiusKm, shouldRefresh = true) {
@@ -1725,20 +1733,14 @@ function setInaturalistRadiusKm(radiusKm, shouldRefresh = true) {
     elements.inatRadiusSelect.value = String(radiusKm);
   }
   if (state.radiusCircle) state.radiusCircle.setRadius(radiusKm * 1000);
+  if (state.expandedRadiusCircle) state.expandedRadiusCircle.setRadius(radiusKm * 1000);
   if (state.map) fitMapToRadius();
+  if (state.expandedMap) fitExpandedMapToRadius();
   updateRadiusLegend();
   updateRegionalScopeCopy();
   if (shouldRefresh && state.selected) {
     refreshRegionalObservationContext();
   }
-}
-
-function setObservationLayerEnabled(enabled, shouldRefresh = true) {
-  state.showObservationLayer = Boolean(enabled);
-  saveObservationLayerPreference(state.showObservationLayer);
-  updateObservationLayerUI();
-  renderObservationMapLayer(state.regionalStats?.uniqueResearchObservations ?? []);
-  if (shouldRefresh) renderRegionalStats();
 }
 
 function fitMapToRadius() {
@@ -1747,6 +1749,15 @@ function fitMapToRadius() {
   state.map.fitBounds(state.radiusCircle.getBounds().pad(0.18), {
     animate: false,
     padding: [24, 24],
+  });
+}
+
+function fitExpandedMapToRadius() {
+  if (!state.expandedMap || !state.expandedRadiusCircle) return;
+  state.expandedMap.invalidateSize(false);
+  state.expandedMap.fitBounds(state.expandedRadiusCircle.getBounds().pad(0.18), {
+    animate: false,
+    padding: [32, 32],
   });
 }
 
@@ -2109,11 +2120,33 @@ function renderSelectedDay() {
   });
 
   elements.summaryLabel.textContent = "Today";
+  if (elements.summaryDate) elements.summaryDate.textContent = label;
   elements.todayScore.textContent = formatScore(selectedDay.score);
-  elements.todayVerdict.textContent = `${signal.shortLabel} outlook`;
+  elements.todayVerdict.textContent = selectedDay.verdict;
+  if (elements.summaryExplanation) elements.summaryExplanation.textContent = outlookNarrative;
+  if (elements.summaryMetrics) {
+    elements.summaryMetrics.innerHTML = [
+      metricPillMarkup({
+        label: "Overall signal",
+        value: signal.shortLabel,
+        helper: "A plain-language read on how worthwhile today looks.",
+        className: signal.className,
+      }),
+      metricPillMarkup({
+        label: "Moisture support",
+        value: moistureSignal,
+        helper: "How helpful recent wet weather has been.",
+      }),
+      metricPillMarkup({
+        label: "Window strength",
+        value: persistence,
+        helper: "Whether the pattern feels fresh, steady, or fading.",
+      }),
+    ].join("");
+  }
   elements.confidenceBadge.textContent = selectedDay.confidence;
-  elements.analysisTitle.textContent = `${label}: at a glance`;
-  elements.analysisCopy.textContent = "Start with today’s outlook above, then compare the rest of the week below.";
+  elements.analysisTitle.textContent = `${label}: compare the nearby window`;
+  elements.analysisCopy.textContent = "Start with the strongest nearby days, then open the selected day for weather context.";
   if (elements.seasonBadge) elements.seasonBadge.textContent = `${selectedDay.season} seasonal context`;
 
   elements.detailDateLabel.textContent = label;
@@ -2141,12 +2174,12 @@ function renderSelectedDay() {
       className: signal.className,
     }),
     metricPillMarkup({
-      label: "Day rating",
+      label: "Forage score",
       value: formatScore(selectedDay.score),
       helper: "Useful for comparing one day with another.",
     }),
     metricPillMarkup({
-      label: "Recent moisture",
+      label: "Moisture support",
       value: moistureSignal,
       helper: "How helpful recent wet weather has been.",
     }),
@@ -2154,7 +2187,7 @@ function renderSelectedDay() {
   if (elements.detailAdvancedMetrics) {
     elements.detailAdvancedMetrics.innerHTML = [
       metricPillMarkup({
-        label: "How long it may last",
+        label: "Window strength",
         value: persistence,
         helper: "Whether the current pattern feels fresh, fading, or already slipping.",
       }),
@@ -2206,7 +2239,7 @@ function renderRegionalStats() {
   `;
   elements.regionalMetrics.innerHTML = `
     <div class="metric-pill"><span>Search radius</span><strong>${state.inatRadiusKm} km</strong></div>
-    <div class="metric-pill"><span>Mushrooms on map</span><strong>${state.showObservationLayer ? "Yes" : "No"}</strong></div>
+    <div class="metric-pill"><span>Recent reports</span><strong>${stats.recent14Observations ?? 0}</strong></div>
     <div class="metric-pill"><span>Research-grade (14d)</span><strong>${stats.researchRecent14Total ?? stats.researchRecent14Observations}</strong></div>
     <div class="metric-pill"><span>Unique species</span><strong>${(stats.uniqueResearchObservations ?? []).length}</strong></div>
   `;
@@ -2306,12 +2339,60 @@ function updateRegionalScopeCopy() {
   elements.regionalCopy.textContent = `Recent mushroom reports within ${state.inatRadiusKm} km offer extra local perspective around your chosen area.`;
 }
 
-function updateObservationLayerUI() {
-  if (elements.observationLayerToggleButton) {
-    elements.observationLayerToggleButton.classList.toggle("is-active", state.showObservationLayer);
-    elements.observationLayerToggleButton.setAttribute("aria-pressed", state.showObservationLayer ? "true" : "false");
-    elements.observationLayerToggleButton.textContent = state.showObservationLayer ? "Hide finds" : "Show finds";
-  }
+function ensureExpandedMap() {
+  if (state.expandedMap || !elements.expandedMap) return;
+  state.expandedMap = L.map(elements.expandedMap, { zoomControl: true, attributionControl: true }).setView(
+    [state.selected.latitude, state.selected.longitude],
+    9,
+  );
+
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+    attribution: '&copy; OpenStreetMap contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    maxZoom: 20,
+  }).addTo(state.expandedMap);
+
+  const markerIcon = L.divIcon({
+    className: "",
+    html: `<div class="fungi-pin"></div>`,
+    iconAnchor: [11, 26],
+    iconSize: [22, 30],
+  });
+
+  state.expandedMarker = L.marker([state.selected.latitude, state.selected.longitude], {
+    draggable: false,
+    icon: markerIcon,
+  }).addTo(state.expandedMap);
+
+  state.expandedRadiusCircle = L.circle([state.selected.latitude, state.selected.longitude], {
+    radius: state.inatRadiusKm * 1000,
+    color: "#1f5f2d",
+    weight: 2,
+    opacity: 0.95,
+    fillColor: "#61b85a",
+    fillOpacity: 0.18,
+    interactive: false,
+  }).addTo(state.expandedMap);
+
+  state.expandedObservationLayer = createObservationLayer(state.expandedMap);
+  renderObservationMapLayer(state.regionalStats?.uniqueResearchObservations ?? []);
+}
+
+function openMapModal() {
+  if (!elements.mapModal) return;
+  elements.mapModal.hidden = false;
+  requestAnimationFrame(() => {
+    elements.mapModal.classList.add("is-open");
+    ensureExpandedMap();
+    fitExpandedMapToRadius();
+  });
+}
+
+function closeMapModal() {
+  if (!elements.mapModal) return;
+  elements.mapModal.classList.remove("is-open");
+  window.setTimeout(() => {
+    if (!elements.mapModal.classList.contains("is-open")) elements.mapModal.hidden = true;
+  }, 220);
 }
 
 async function refreshRegionalObservationContext() {
@@ -2451,6 +2532,12 @@ function initMap() {
   window.addEventListener("resize", () => {
     if (!state.map) return;
     fitMapToRadius();
+    if (!state.expandedMap && elements.mapModal && !elements.mapModal.hidden) {
+      ensureExpandedMap();
+    }
+    if (state.expandedMap && elements.mapModal && !elements.mapModal.hidden) {
+      fitExpandedMapToRadius();
+    }
   });
 }
 
@@ -2471,9 +2558,6 @@ elements.locationInput.addEventListener("blur", () => window.setTimeout(hideSugg
 elements.inatRadiusSelect?.addEventListener("change", (event) => {
   const nextRadius = Number.parseInt(event.target.value, 10);
   setInaturalistRadiusKm(nextRadius);
-});
-elements.observationLayerToggleButton?.addEventListener("click", () => {
-  setObservationLayerEnabled(!state.showObservationLayer);
 });
 elements.locationSuggestions.addEventListener("click", (event) => {
   const option = event.target.closest("[data-suggestion-index]");
@@ -2579,6 +2663,11 @@ elements.closeImageModalButton.addEventListener("click", closeObservationModal);
 elements.imageModal.addEventListener("click", (event) => {
   if (event.target === elements.imageModal) closeObservationModal();
 });
+elements.expandMapButton?.addEventListener("click", openMapModal);
+elements.closeMapModalButton?.addEventListener("click", closeMapModal);
+elements.mapModal?.addEventListener("click", (event) => {
+  if (event.target === elements.mapModal) closeMapModal();
+});
 elements.combinedChart.addEventListener("keydown", (event) => {
   if (event.key === "ArrowLeft") {
     event.preventDefault();
@@ -2624,13 +2713,13 @@ window.addEventListener("resize", () => {
 });
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && elements.imageModal && !elements.imageModal.hidden) closeObservationModal();
+  if (event.key === "Escape" && elements.mapModal && !elements.mapModal.hidden) closeMapModal();
   if (event.key === "Escape" && elements.feedbackModal && !elements.feedbackModal.hidden) closeFeedbackModal();
 });
 
 if (elements.inatRadiusSelect) {
   elements.inatRadiusSelect.value = String(state.inatRadiusKm);
 }
-updateObservationLayerUI();
 updateRadiusLegend();
 updateRegionalScopeCopy();
 
