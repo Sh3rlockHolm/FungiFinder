@@ -485,7 +485,7 @@ dd {
 
 .map-pane {
   display: grid;
-  grid-template-rows: minmax(280px, 36vh) 1fr;
+  grid-template-rows: minmax(300px, 40vh) 1fr;
   min-width: 0;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-xl);
@@ -591,6 +591,52 @@ dd {
 }
 
 .radius-control-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.map-option-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin-top: 10px;
+}
+
+.map-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: rgba(247, 244, 236, 0.82);
+  color: var(--ink);
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+.map-option input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--moss);
+}
+
+.info-chip {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(122, 126, 119, 0.38);
+  border-radius: 50%;
+  background: rgba(235, 236, 233, 0.95);
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: none;
+}
+
+.map-option-copy {
   margin: 0;
   color: var(--muted);
   font-size: 0.82rem;
@@ -1402,11 +1448,16 @@ dd {
   border-radius: 14px;
   background: rgba(255, 253, 247, 0.98);
   color: inherit;
+  cursor: pointer;
+  transition: transform var(--motion-fast) ease, box-shadow var(--motion-fast) ease, border-color var(--motion-fast) ease;
 }
 
-.observation-main-link {
-  color: inherit;
-  text-decoration: none;
+.observation-tile:hover,
+.observation-tile:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(57, 112, 71, 0.34);
+  box-shadow: 0 10px 20px rgba(46, 61, 43, 0.08);
+  outline: none;
 }
 
 .observation-thumb {
@@ -1488,6 +1539,25 @@ dd {
   text-decoration: underline;
 }
 
+.map-observation-icon {
+  pointer-events: auto;
+}
+
+.map-observation-marker {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 8px rgba(30, 45, 25, 0.22);
+  background-color: #7fb56a;
+  background-position: center;
+  background-size: cover;
+}
+
+.map-observation-marker.no-photo {
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.9), rgba(127, 181, 106, 0.82) 50%, rgba(64, 96, 55, 0.92) 100%);
+}
+
 .metric-pill,
 .breakdown-pill {
   display: grid;
@@ -1563,21 +1633,62 @@ dd {
 }
 
 .image-modal-window {
-  width: min(760px, 100%);
+  width: min(920px, 100%);
 }
 
 .image-modal-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(240px, 0.9fr);
+  gap: 18px;
+  align-items: start;
   border-radius: 10px;
   overflow: hidden;
   background: rgba(20, 32, 24, 0.08);
+  padding: 12px;
 }
 
 #imageModalPreview {
   display: block;
   width: 100%;
-  max-height: 70vh;
+  height: min(66vh, 620px);
   object-fit: contain;
   background: rgba(20, 32, 24, 0.08);
+  border-radius: 10px;
+}
+
+.image-modal-info {
+  position: relative;
+  display: grid;
+  gap: 14px;
+  padding: 8px 2px 8px 0;
+}
+
+.modal-observation-meta {
+  gap: 4px;
+}
+
+.modal-observation-meta strong {
+  font-size: 1.05rem;
+}
+
+.modal-observation-meta em,
+.modal-observation-meta span {
+  display: block;
+  font-size: 0.85rem;
+}
+
+.modal-observation-links {
+  display: grid;
+  gap: 10px;
+}
+
+.modal-observation-links a {
+  font-size: 0.86rem;
+}
+
+.modal-grade-badge {
+  position: static;
+  justify-self: start;
 }
 
 .loading {
@@ -1602,6 +1713,15 @@ dd {
 
   .map-pane {
     grid-template-rows: 220px auto;
+  }
+
+  .image-modal-body {
+    grid-template-columns: 1fr;
+  }
+
+  #imageModalPreview {
+    height: auto;
+    max-height: 52vh;
   }
 
 }

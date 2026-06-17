@@ -7,7 +7,9 @@ const state = {
   map: null,
   marker: null,
   radiusCircle: null,
+  observationLayer: null,
   regionalStats: null,
+  observationById: new Map(),
   scoredDays: [],
   selected: { latitude: 48.0000, longitude: 8.0000, label: "Black Forest, Germany" },
   regionalPage: 1,
@@ -58,6 +60,7 @@ const FORECAST_WINDOW_DAYS = FORECAST_FUTURE_DAYS + 1;
 const DEFAULT_INATURALIST_RADIUS_KM = MODEL_METADATA.radiusKm ?? 50;
 const INATURALIST_RADIUS_OPTIONS_KM = [25, 50, 100];
 const INATURALIST_RADIUS_STORAGE_KEY = "fungifinder_inat_radius_km_v1";
+const OBSERVATION_LAYER_STORAGE_KEY = "fungifinder_show_observation_layer_v1";
 const INATURALIST_TAXON_ID = MODEL_METADATA.inatTaxonId ?? 50814;
 const RAIN_AXIS_BASE_CAP_MM = 40;
 const RAIN_AXIS_STEP_MM = 10;
@@ -86,8 +89,11 @@ const elements = {
   locationInput: document.querySelector("#locationInput"),
   locationSuggestions: document.querySelector("#locationSuggestions"),
   inatRadiusSelect: document.querySelector("#inatRadiusSelect"),
+  observationLayerToggle: document.querySelector("#observationLayerToggle"),
+  observationLayerInfo: document.querySelector("#observationLayerInfo"),
+  observationLayerCopy: document.querySelector("#observationLayerCopy"),
   mobileTabs: document.querySelector("#mobileTabs"),
-  mapLegendCopy: document.querySelector(".map-legend-copy"),
+  mapRadiusCopy: document.querySelector("[data-map-radius-copy]"),
   mobileOverviewSection: document.querySelector("#mobileOverviewSection"),
   mobileDetailsSection: document.querySelector("#mobileDetailsSection"),
   mobileExamplesSection: document.querySelector("#mobileExamplesSection"),
@@ -141,7 +147,24 @@ function savePreferredInaturalistRadiusKm(radiusKm) {
   }
 }
 
+function loadObservationLayerPreference() {
+  try {
+    return localStorage.getItem(OBSERVATION_LAYER_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function saveObservationLayerPreference(enabled) {
+  try {
+    localStorage.setItem(OBSERVATION_LAYER_STORAGE_KEY, enabled ? "true" : "false");
+  } catch (error) {
+    console.error("Failed to save mushroom map preference", error);
+  }
+}
+
 state.inatRadiusKm = loadPreferredInaturalistRadiusKm();
+state.showObservationLayer = loadObservationLayerPreference();
 
 function loadFeedbackLog() {
   try {
@@ -1047,8 +1070,13 @@ async function fetchINaturalistRecentResearch(latitude, longitude, radiusKm, ext
     const observedOnRaw = item.observed_on || item.time_observed_at?.slice(0, 10) || "";
     const observedOn = observedOnRaw ? formatShortDate(observedOnRaw) : "";
     const photo = item.photos?.[0]?.url?.replace("square", "medium") ?? "";
+    const coordinates = item.geojson?.coordinates;
+    const longitudeValue = Array.isArray(coordinates) ? Number(coordinates[0]) : NaN;
+    const latitudeValue = Array.isArray(coordinates) ? Number(coordinates[1]) : NaN;
     return {
       id: item.id,
+      latitude: Number.isFinite(latitudeValue) ? latitudeValue : null,
+      longitude: Number.isFinite(longitudeValue) ? longitudeValue : null,
       observedOn,
       photo,
       species,
@@ -1098,8 +1126,13 @@ async function fetchINaturalistRecentNonResearch(latitude, longitude, radiusKm, 
       const observedOnRaw = item.observed_on || item.time_observed_at?.slice(0, 10) || "";
       const observedOn = observedOnRaw ? formatShortDate(observedOnRaw) : "";
       const photo = item.photos?.[0]?.url?.replace("square", "medium") ?? "";
+      const coordinates = item.geojson?.coordinates;
+      const longitudeValue = Array.isArray(coordinates) ? Number(coordinates[0]) : NaN;
+      const latitudeValue = Array.isArray(coordinates) ? Number(coordinates[1]) : NaN;
       return {
         id: item.id,
+        latitude: Number.isFinite(latitudeValue) ? latitudeValue : null,
+        longitude: Number.isFinite(longitudeValue) ? longitudeValue : null,
         observedOn,
         photo,
         species,
@@ -1287,13 +1320,12 @@ function buildObservationTilesMarkup(observations) {
   return observations
     .map(
       (obs) => `
-      <div class="observation-tile">
-        <a class="observation-main-link" href="${obs.url}" target="_blank" rel="noopener noreferrer">
+      <div class="observation-tile" role="button" tabindex="0" data-observation-id="${obs.id}">
         <div class="observation-thumb">
           ${obs.qualityGrade === "research" ? `<span class="grade-badge">Research Grade</span>` : ""}
           ${
             obs.photo
-              ? `<img src="${obs.photo}" alt="${obs.species}" data-popup-image="${obs.photo}" data-popup-title="${obs.species.replace(/"/g, "&quot;")}">`
+              ? `<img src="${obs.photo}" alt="${obs.species}">`
               : `<span>No photo</span>`
           }
         </div>
@@ -1302,7 +1334,6 @@ function buildObservationTilesMarkup(observations) {
           ${obs.scientificName ? `<em>${obs.scientificName}</em>` : ""}
           <span>${obs.observedOn || "Date unknown"}</span>
         </div>
-        </a>
         <div class="observation-links">
           <a href="${obs.url}" target="_blank" rel="noopener noreferrer">View on iNaturalist</a>
           ${obs.wikipediaUrl ? `<a href="${obs.wikipediaUrl}" target="_blank" rel="noopener noreferrer">Wikipedia</a>` : ""}
@@ -1321,6 +1352,80 @@ function ensureRegionalPageMarkup(stats, page, pageSize = 8) {
   const markup = buildObservationTilesMarkup(pageItems);
   state.regionalTilePages.set(page, markup);
   return markup;
+}
+
+function openObservationModal(observation) {
+  if (!observation || !elements.imageModal) return;
+  if (elements.imageModalPreview) {
+    elements.imageModalPreview.src = observation.photo || "";
+    elements.imageModalPreview.alt = observation.species || "Observation preview";
+  }
+  if (elements.imageModalTitle) elements.imageModalTitle.textContent = observation.species || "Observation";
+  const modalPhoto = elements.imageModal.querySelector("[data-modal-photo]");
+  const modalSpecies = elements.imageModal.querySelector("[data-modal-species]");
+  const modalScientific = elements.imageModal.querySelector("[data-modal-scientific]");
+  const modalObservedOn = elements.imageModal.querySelector("[data-modal-observed-on]");
+  const modalGrade = elements.imageModal.querySelector("[data-modal-grade]");
+  const modalLinks = elements.imageModal.querySelector("[data-modal-links]");
+  if (modalPhoto) {
+    modalPhoto.src = observation.photo || "";
+    modalPhoto.alt = observation.species || "Observation preview";
+  }
+  if (modalSpecies) modalSpecies.textContent = observation.species || "Unknown mushroom";
+  if (modalScientific) modalScientific.textContent = observation.scientificName || "";
+  if (modalObservedOn) modalObservedOn.textContent = observation.observedOn || "Date unknown";
+  if (modalGrade) modalGrade.textContent = observation.qualityGrade === "research" ? "Research Grade" : "Needs ID";
+  if (modalLinks) {
+    modalLinks.innerHTML = `
+      <a href="${observation.url}" target="_blank" rel="noopener noreferrer">View on iNaturalist</a>
+      ${observation.wikipediaUrl ? `<a href="${observation.wikipediaUrl}" target="_blank" rel="noopener noreferrer">Wikipedia</a>` : ""}
+    `;
+  }
+  elements.imageModal.hidden = false;
+  requestAnimationFrame(() => {
+    elements.imageModal.classList.add("is-open");
+  });
+}
+
+function closeObservationModal() {
+  if (!elements.imageModal) return;
+  elements.imageModal.classList.remove("is-open");
+  window.setTimeout(() => {
+    if (!elements.imageModal.classList.contains("is-open")) elements.imageModal.hidden = true;
+  }, 220);
+}
+
+function renderObservationMapLayer(observations) {
+  if (!state.map) return;
+  if (!state.observationLayer) {
+    state.observationLayer = L.layerGroup().addTo(state.map);
+  }
+  state.observationLayer.clearLayers();
+  if (!state.showObservationLayer) return;
+  const markerCount = Math.min(observations.length, 40);
+  observations
+    .slice(0, markerCount)
+    .filter((observation) => Number.isFinite(observation.latitude) && Number.isFinite(observation.longitude))
+    .forEach((observation) => {
+      const markerSize = observation.photo ? 30 : 24;
+      const photoUrl = observation.photo || "";
+      const safePhotoUrl = encodeURI(photoUrl);
+      const markerHtml = observation.photo
+        ? `<div class="map-observation-marker has-photo" style="background-image:url('${safePhotoUrl}')"></div>`
+        : `<div class="map-observation-marker no-photo"></div>`;
+      const icon = L.divIcon({
+        className: "map-observation-icon",
+        html: markerHtml,
+        iconSize: [markerSize, markerSize],
+        iconAnchor: [markerSize / 2, markerSize / 2],
+      });
+      const marker = L.marker([observation.latitude, observation.longitude], {
+        icon,
+        keyboard: false,
+      });
+      marker.on("click", () => openObservationModal(observation));
+      marker.addTo(state.observationLayer);
+    });
 }
 
 function renderRegionalTilesWithSlide(stats, targetPage) {
@@ -1369,25 +1474,7 @@ function renderRegionalTilesWithSlide(stats, targetPage) {
     incoming.classList.add("current");
   }, direction === "backward" ? 620 : 500);
   state.regionalRenderedPage = safePage;
-}
-
-function openImageModal(src, title) {
-  if (!src || !elements.imageModal || !elements.imageModalPreview) return;
-  elements.imageModalPreview.src = src;
-  elements.imageModalPreview.alt = title || "Observation preview";
-  if (elements.imageModalTitle) elements.imageModalTitle.textContent = title || "Observation";
-  elements.imageModal.hidden = false;
-  requestAnimationFrame(() => {
-    elements.imageModal.classList.add("is-open");
-  });
-}
-
-function closeImageModal() {
-  if (!elements.imageModal) return;
-  elements.imageModal.classList.remove("is-open");
-  window.setTimeout(() => {
-    if (!elements.imageModal.classList.contains("is-open")) elements.imageModal.hidden = true;
-  }, 220);
+  renderObservationMapLayer(state.regionalStats?.uniqueResearchObservations ?? []);
 }
 
 function normalizeWeather(payload) {
@@ -1610,6 +1697,14 @@ function setInaturalistRadiusKm(radiusKm, shouldRefresh = true) {
   if (shouldRefresh && state.selected) {
     refreshRegionalObservationContext();
   }
+}
+
+function setObservationLayerEnabled(enabled, shouldRefresh = true) {
+  state.showObservationLayer = Boolean(enabled);
+  saveObservationLayerPreference(state.showObservationLayer);
+  updateObservationLayerUI();
+  renderObservationMapLayer(state.regionalStats?.uniqueResearchObservations ?? []);
+  if (shouldRefresh) renderRegionalStats();
 }
 
 function buildSmoothPath(points) {
@@ -1959,9 +2054,12 @@ function renderRegionalStats() {
     elements.regionalTiles.innerHTML = "";
     elements.regionalPagination.innerHTML = "";
     state.regionalTilePages.clear();
+    state.observationById = new Map();
+    renderObservationMapLayer([]);
     updateRegionalScopeCopy();
     return;
   }
+  state.observationById = new Map((stats.uniqueResearchObservations ?? []).map((observation) => [String(observation.id), observation]));
   elements.regionalConfidence.textContent = "";
   elements.regionalConfidence.hidden = true;
   const total = (stats.uniqueResearchObservations ?? []).length;
@@ -1976,11 +2074,12 @@ function renderRegionalStats() {
   `;
   elements.regionalMetrics.innerHTML = `
     <div class="metric-pill"><span>Search radius</span><strong>${state.inatRadiusKm} km</strong></div>
-    <div class="metric-pill"><span>Mushroom filter</span><strong>On</strong></div>
+    <div class="metric-pill"><span>Mushrooms on map</span><strong>${state.showObservationLayer ? "Yes" : "No"}</strong></div>
     <div class="metric-pill"><span>Research-grade (14d)</span><strong>${stats.researchRecent14Total ?? stats.researchRecent14Observations}</strong></div>
     <div class="metric-pill"><span>Unique species</span><strong>${(stats.uniqueResearchObservations ?? []).length}</strong></div>
   `;
   updateRegionalScopeCopy();
+  renderObservationMapLayer(stats.uniqueResearchObservations ?? []);
 }
 
 function moveFocus(step) {
@@ -2066,13 +2165,22 @@ async function resolveLocationInput(value) {
 }
 
 function updateRadiusLegend() {
-  const label = elements.mapLegendCopy;
+  const label = elements.mapRadiusCopy;
   if (label) label.textContent = `${state.inatRadiusKm} km around the selected point`;
 }
 
 function updateRegionalScopeCopy() {
   if (!elements.regionalCopy) return;
   elements.regionalCopy.textContent = `Nearby mushroom observations within ${state.inatRadiusKm} km are context only; they support confidence and do not drive the timing score.`;
+}
+
+function updateObservationLayerUI() {
+  if (elements.observationLayerToggle) {
+    elements.observationLayerToggle.checked = state.showObservationLayer;
+  }
+  if (elements.observationLayerCopy) {
+    elements.observationLayerCopy.hidden = !state.showObservationLayer;
+  }
 }
 
 async function refreshRegionalObservationContext() {
@@ -2224,6 +2332,13 @@ elements.inatRadiusSelect?.addEventListener("change", (event) => {
   const nextRadius = Number.parseInt(event.target.value, 10);
   setInaturalistRadiusKm(nextRadius);
 });
+elements.observationLayerToggle?.addEventListener("change", (event) => {
+  setObservationLayerEnabled(event.target.checked);
+});
+elements.observationLayerInfo?.addEventListener("click", () => {
+  if (!elements.observationLayerCopy) return;
+  elements.observationLayerCopy.hidden = !elements.observationLayerCopy.hidden;
+});
 elements.locationSuggestions.addEventListener("click", (event) => {
   const option = event.target.closest("[data-suggestion-index]");
   if (!option) return;
@@ -2308,14 +2423,25 @@ elements.regionalPagination.addEventListener("click", (event) => {
   fetchRegionalObservationPage(page);
 });
 elements.regionalTiles.addEventListener("click", (event) => {
-  const image = event.target.closest("[data-popup-image]");
-  if (!image) return;
+  const tile = event.target.closest("[data-observation-id]");
+  if (!tile) return;
+  const observation = state.observationById.get(tile.dataset.observationId ?? "");
+  if (!observation) return;
+  if (event.target.closest("a")) return;
   event.preventDefault();
-  openImageModal(image.dataset.popupImage, image.dataset.popupTitle);
+  openObservationModal(observation);
 });
-elements.closeImageModalButton.addEventListener("click", closeImageModal);
+elements.regionalTiles.addEventListener("keydown", (event) => {
+  const tile = event.target.closest("[data-observation-id]");
+  if (!tile || (event.key !== "Enter" && event.key !== " ")) return;
+  const observation = state.observationById.get(tile.dataset.observationId ?? "");
+  if (!observation) return;
+  event.preventDefault();
+  openObservationModal(observation);
+});
+elements.closeImageModalButton.addEventListener("click", closeObservationModal);
 elements.imageModal.addEventListener("click", (event) => {
-  if (event.target === elements.imageModal) closeImageModal();
+  if (event.target === elements.imageModal) closeObservationModal();
 });
 elements.combinedChart.addEventListener("keydown", (event) => {
   if (event.key === "ArrowLeft") {
@@ -2361,13 +2487,14 @@ window.addEventListener("resize", () => {
   setMobileTab(active);
 });
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && elements.imageModal && !elements.imageModal.hidden) closeImageModal();
+  if (event.key === "Escape" && elements.imageModal && !elements.imageModal.hidden) closeObservationModal();
   if (event.key === "Escape" && elements.feedbackModal && !elements.feedbackModal.hidden) closeFeedbackModal();
 });
 
 if (elements.inatRadiusSelect) {
   elements.inatRadiusSelect.value = String(state.inatRadiusKm);
 }
+updateObservationLayerUI();
 updateRadiusLegend();
 updateRegionalScopeCopy();
 

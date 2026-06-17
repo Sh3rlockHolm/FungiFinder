@@ -88,7 +88,7 @@
           <span class="map-legend-swatch" aria-hidden="true"></span>
           <div class="map-legend-copy">
             <strong>Mushroom search area</strong>
-            <span>50 km around the selected point</span>
+            <span data-map-radius-copy>50 km around the selected point</span>
           </div>
         </div>
         <section class="forecast-panel" aria-label="Daily mushroom prognosis">
@@ -120,6 +120,14 @@
               </select>
             </label>
             <p class="radius-control-copy">Choose how wide the nearby mushroom context should be.</p>
+          </div>
+          <div class="map-option-row">
+            <label class="map-option" for="observationLayerToggle">
+              <input id="observationLayerToggle" type="checkbox">
+              <span>Only show mushrooms on map</span>
+            </label>
+            <button class="info-chip" id="observationLayerInfo" type="button" aria-label="What does showing mushroom finds on the map do?">i</button>
+            <p class="map-option-copy" id="observationLayerCopy" hidden>Shows only mushroom observations as small photo circles on the map. Turn it off for a cleaner view.</p>
           </div>
           <section class="analysis-panel" aria-label="Selected day evidence">
             <div class="analysis-header">
@@ -203,10 +211,19 @@
       <div class="modal-window image-modal-window" role="dialog" aria-modal="true" aria-labelledby="imageModalTitle">
         <div class="modal-header">
           <h3 id="imageModalTitle">Observation</h3>
-          <button class="icon-button modal-close" id="closeImageModalButton" type="button" aria-label="Close image preview">X</button>
+          <button class="icon-button modal-close" id="closeImageModalButton" type="button" aria-label="Close observation popup">X</button>
         </div>
         <div class="image-modal-body">
-          <img id="imageModalPreview" alt="Observation preview">
+          <img id="imageModalPreview" alt="Observation preview" data-modal-photo>
+          <div class="image-modal-info">
+            <div class="observation-meta modal-observation-meta">
+              <strong data-modal-species>Observation</strong>
+              <em data-modal-scientific></em>
+              <span data-modal-observed-on></span>
+            </div>
+            <div class="observation-links modal-observation-links" data-modal-links></div>
+            <span class="grade-badge modal-grade-badge" data-modal-grade>Research Grade</span>
+          </div>
         </div>
       </div>
     </div>
