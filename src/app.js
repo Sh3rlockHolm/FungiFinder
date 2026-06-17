@@ -55,9 +55,10 @@ const FEEDBACK_EXPECTATION_MATCH_DELTA_MAX = 15;
 const FORECAST_FUTURE_DAYS = 14;
 const FORECAST_PAST_DAYS = 7;
 const FORECAST_WINDOW_DAYS = FORECAST_FUTURE_DAYS + 1;
-const INATURALIST_RADIUS_KM = MODEL_METADATA.radiusKm ?? 50;
+const DEFAULT_INATURALIST_RADIUS_KM = MODEL_METADATA.radiusKm ?? 50;
+const INATURALIST_RADIUS_OPTIONS_KM = [25, 50, 100];
+const INATURALIST_RADIUS_STORAGE_KEY = "fungifinder_inat_radius_km_v1";
 const INATURALIST_TAXON_ID = MODEL_METADATA.inatTaxonId ?? 50814;
-const INATURALIST_TAXON_LABEL = MODEL_METADATA.inatTaxonLabel ?? "Agaricomycetes";
 const RAIN_AXIS_BASE_CAP_MM = 40;
 const RAIN_AXIS_STEP_MM = 10;
 const LOCKED_RAIN_BANDS = {
@@ -84,6 +85,7 @@ const elements = {
   detailVerdict: document.querySelector("#detailVerdict"),
   locationInput: document.querySelector("#locationInput"),
   locationSuggestions: document.querySelector("#locationSuggestions"),
+  inatRadiusSelect: document.querySelector("#inatRadiusSelect"),
   mobileTabs: document.querySelector("#mobileTabs"),
   mobileOverviewSection: document.querySelector("#mobileOverviewSection"),
   mobileDetailsSection: document.querySelector("#mobileDetailsSection"),
@@ -119,6 +121,26 @@ const elements = {
   feedbackSyncBadge: document.querySelector("#feedbackSyncBadge"),
   copyFeedbackErrorButton: document.querySelector("#copyFeedbackErrorButton"),
 };
+
+function loadPreferredInaturalistRadiusKm() {
+  try {
+    const stored = Number.parseInt(localStorage.getItem(INATURALIST_RADIUS_STORAGE_KEY) ?? "", 10);
+    if (INATURALIST_RADIUS_OPTIONS_KM.includes(stored)) return stored;
+  } catch {
+    return DEFAULT_INATURALIST_RADIUS_KM;
+  }
+  return DEFAULT_INATURALIST_RADIUS_KM;
+}
+
+function savePreferredInaturalistRadiusKm(radiusKm) {
+  try {
+    localStorage.setItem(INATURALIST_RADIUS_STORAGE_KEY, String(radiusKm));
+  } catch (error) {
+    console.error("Failed to save iNaturalist radius", error);
+  }
+}
+
+state.inatRadiusKm = loadPreferredInaturalistRadiusKm();
 
 function loadFeedbackLog() {
   try {
@@ -977,28 +999,28 @@ function isoDaysAgo(days) {
   return date.toISOString().slice(0, 10);
 }
 
-function buildINaturalistParams(latitude, longitude, extraParams = {}) {
+function buildINaturalistParams(latitude, longitude, radiusKm, extraParams = {}) {
   return new URLSearchParams({
     taxon_id: String(INATURALIST_TAXON_ID),
     lat: latitude.toFixed(5),
     lng: longitude.toFixed(5),
     per_page: "1",
-    radius: String(INATURALIST_RADIUS_KM),
+    radius: String(radiusKm),
     verifiable: "true",
     ...extraParams,
   });
 }
 
-async function fetchINaturalistCount(latitude, longitude, extraParams = {}) {
-  const params = buildINaturalistParams(latitude, longitude, extraParams);
+async function fetchINaturalistCount(latitude, longitude, radiusKm, extraParams = {}) {
+  const params = buildINaturalistParams(latitude, longitude, radiusKm, extraParams);
   const response = await fetch(`https://api.inaturalist.org/v1/observations?${params}`);
   if (!response.ok) throw new Error(`iNaturalist request failed with ${response.status}`);
   const payload = await response.json();
   return payload.total_results ?? 0;
 }
 
-async function fetchINaturalistRecentResearch(latitude, longitude, extraParams = {}) {
-  const params = buildINaturalistParams(latitude, longitude, {
+async function fetchINaturalistRecentResearch(latitude, longitude, radiusKm, extraParams = {}) {
+  const params = buildINaturalistParams(latitude, longitude, radiusKm, {
     per_page: "8",
     quality_grade: "research",
     order: "desc",
@@ -1048,8 +1070,8 @@ async function fetchINaturalistRecentResearch(latitude, longitude, extraParams =
   };
 }
 
-async function fetchINaturalistRecentNonResearch(latitude, longitude, extraParams = {}) {
-  const params = buildINaturalistParams(latitude, longitude, {
+async function fetchINaturalistRecentNonResearch(latitude, longitude, radiusKm, extraParams = {}) {
+  const params = buildINaturalistParams(latitude, longitude, radiusKm, {
     per_page: "200",
     quality_grade: "needs_id",
     order: "desc",
@@ -1099,13 +1121,13 @@ async function fetchINaturalistRecentNonResearch(latitude, longitude, extraParam
   };
 }
 
-async function fetchINaturalistRecentNonResearchAll(latitude, longitude, extraParams = {}) {
+async function fetchINaturalistRecentNonResearchAll(latitude, longitude, radiusKm, extraParams = {}) {
   const perPage = 200;
   let page = 1;
   let totalResults = 0;
   const all = [];
   while (page <= 5) {
-    const result = await fetchINaturalistRecentNonResearch(latitude, longitude, {
+    const result = await fetchINaturalistRecentNonResearch(latitude, longitude, radiusKm, {
       ...extraParams,
       per_page: String(perPage),
       page: String(page),
@@ -1166,13 +1188,13 @@ function dedupeByBestConfidence(observations) {
   return [...bestByKey.values()];
 }
 
-async function fetchINaturalistRecentResearchAll(latitude, longitude, extraParams = {}) {
+async function fetchINaturalistRecentResearchAll(latitude, longitude, radiusKm, extraParams = {}) {
   const perPage = 200;
   let page = 1;
   let totalResults = 0;
   const all = [];
   while (page <= 5) {
-    const result = await fetchINaturalistRecentResearch(latitude, longitude, {
+    const result = await fetchINaturalistRecentResearch(latitude, longitude, radiusKm, {
       ...extraParams,
       per_page: String(perPage),
       page: String(page),
@@ -1190,13 +1212,13 @@ function summarizeRegionalStats(stats) {
   return "";
 }
 
-async function fetchRegionalObservationStats(latitude, longitude, dateString) {
+async function fetchRegionalObservationStats(latitude, longitude, dateString, radiusKm) {
   try {
     const [researchRecent14Observations, researchAll, nonResearchAll] =
       await Promise.all([
-        fetchINaturalistCount(latitude, longitude, { d1: isoDaysAgo(14), quality_grade: "research" }),
-        fetchINaturalistRecentResearchAll(latitude, longitude, { d1: isoDaysAgo(14) }),
-        fetchINaturalistRecentNonResearchAll(latitude, longitude, { d1: isoDaysAgo(14) }),
+        fetchINaturalistCount(latitude, longitude, radiusKm, { d1: isoDaysAgo(14), quality_grade: "research" }),
+        fetchINaturalistRecentResearchAll(latitude, longitude, radiusKm, { d1: isoDaysAgo(14) }),
+        fetchINaturalistRecentNonResearchAll(latitude, longitude, radiusKm, { d1: isoDaysAgo(14) }),
       ]);
     const dedupedResearch = dedupeByBestConfidence(researchAll.observations);
     const dedupedNonResearch = dedupeByBestConfidence(nonResearchAll.observations)
@@ -1568,9 +1590,25 @@ function setSelectedLocation(latitude, longitude, label, shouldMoveMap = true) {
   if (state.marker) state.marker.setLatLng([latitude, longitude]);
   if (state.radiusCircle) {
     state.radiusCircle.setLatLng([latitude, longitude]);
-    state.radiusCircle.setRadius(INATURALIST_RADIUS_KM * 1000);
+    state.radiusCircle.setRadius(state.inatRadiusKm * 1000);
   }
   if (shouldMoveMap && state.map) state.map.setView([latitude, longitude], Math.max(state.map.getZoom(), 9));
+}
+
+function setInaturalistRadiusKm(radiusKm, shouldRefresh = true) {
+  if (!INATURALIST_RADIUS_OPTIONS_KM.includes(radiusKm)) return;
+  if (state.inatRadiusKm === radiusKm) return;
+  state.inatRadiusKm = radiusKm;
+  savePreferredInaturalistRadiusKm(radiusKm);
+  if (elements.inatRadiusSelect && elements.inatRadiusSelect.value !== String(radiusKm)) {
+    elements.inatRadiusSelect.value = String(radiusKm);
+  }
+  if (state.radiusCircle) state.radiusCircle.setRadius(radiusKm * 1000);
+  updateRadiusLegend();
+  updateRegionalScopeCopy();
+  if (shouldRefresh && state.selected) {
+    refreshRegionalObservationContext();
+  }
 }
 
 function buildSmoothPath(points) {
@@ -1920,7 +1958,7 @@ function renderRegionalStats() {
     elements.regionalTiles.innerHTML = "";
     elements.regionalPagination.innerHTML = "";
     state.regionalTilePages.clear();
-    elements.regionalCopy.textContent = "";
+    updateRegionalScopeCopy();
     return;
   }
   elements.regionalConfidence.textContent = "";
@@ -1936,12 +1974,12 @@ function renderRegionalStats() {
     <button class="ghost-button" type="button" data-regional-page="${Math.min(pageCount, currentPage + 1)}" ${currentPage >= pageCount ? "disabled" : ""}>Next</button>
   `;
   elements.regionalMetrics.innerHTML = `
-    <div class="metric-pill"><span>iNat radius</span><strong>${INATURALIST_RADIUS_KM} km</strong></div>
-    <div class="metric-pill"><span>Taxon scope</span><strong>${INATURALIST_TAXON_LABEL}</strong></div>
+    <div class="metric-pill"><span>Search radius</span><strong>${state.inatRadiusKm} km</strong></div>
+    <div class="metric-pill"><span>Mushroom filter</span><strong>On</strong></div>
     <div class="metric-pill"><span>Research-grade (14d)</span><strong>${stats.researchRecent14Total ?? stats.researchRecent14Observations}</strong></div>
     <div class="metric-pill"><span>Unique species</span><strong>${(stats.uniqueResearchObservations ?? []).length}</strong></div>
   `;
-  elements.regionalCopy.textContent = `Nearby iNaturalist ${INATURALIST_TAXON_LABEL} observations within ${INATURALIST_RADIUS_KM} km are context only; they support confidence and do not drive the timing score.`;
+  updateRegionalScopeCopy();
 }
 
 function moveFocus(step) {
@@ -2026,6 +2064,55 @@ async function resolveLocationInput(value) {
   return geocodeLocation(value.trim());
 }
 
+function updateRadiusLegend() {
+  if (!elements.inatRadiusSelect) return;
+  const label = elements.inatRadiusSelect.closest(".map-legend")?.querySelector(".map-legend-copy");
+  if (label) label.textContent = `${state.inatRadiusKm} km around the selected point`;
+}
+
+function updateRegionalScopeCopy() {
+  if (!elements.regionalCopy) return;
+  elements.regionalCopy.textContent = `Nearby mushroom observations within ${state.inatRadiusKm} km are context only; they support confidence and do not drive the timing score.`;
+}
+
+async function refreshRegionalObservationContext() {
+  if (!state.selected) return;
+  state.regionalStats = null;
+  state.regionalPage = 1;
+  state.regionalRenderedPage = 1;
+  state.regionalTilePages.clear();
+  renderRegionalStats();
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    state.regionalStats = await fetchRegionalObservationStats(
+      state.selected.latitude,
+      state.selected.longitude,
+      today,
+      state.inatRadiusKm,
+    );
+    renderRegionalStats();
+    renderSelectedDay();
+  } catch (error) {
+    console.error(error);
+    state.regionalStats = {
+      confidence: "Unavailable",
+      recent7Observations: 0,
+      recent14Observations: 0,
+      researchRecent14Observations: 0,
+      seasonalObservations: 0,
+      source: "iNaturalist",
+      status: "unavailable",
+      summary: "",
+      totalObservations: 0,
+      recentResearchObservations: [],
+      researchRecent14Total: 0,
+      uniqueResearchObservations: [],
+      uniqueResearchOnlyCount: 0,
+    };
+    renderRegionalStats();
+  }
+}
+
 async function analyzeLocation(location, shouldMoveMap = true) {
   setSelectedLocation(location.latitude, location.longitude, location.label, shouldMoveMap);
   setStatus("Loading");
@@ -2041,7 +2128,7 @@ async function analyzeLocation(location, shouldMoveMap = true) {
     const today = new Date().toISOString().slice(0, 10);
     const [payload, regionalStats] = await Promise.all([
       fetchWeather(location.latitude, location.longitude),
-      fetchRegionalObservationStats(location.latitude, location.longitude, today),
+      fetchRegionalObservationStats(location.latitude, location.longitude, today, state.inatRadiusKm),
     ]);
     const usedWeatherFallback = payload.forecastFallback === true;
     state.regionalStats = regionalStats;
@@ -2092,7 +2179,7 @@ function initMap() {
   }).addTo(state.map);
 
   state.radiusCircle = L.circle([state.selected.latitude, state.selected.longitude], {
-    radius: INATURALIST_RADIUS_KM * 1000,
+    radius: state.inatRadiusKm * 1000,
     color: "#1f5f2d",
     weight: 2,
     opacity: 0.95,
@@ -2133,6 +2220,10 @@ elements.coordinateForm.addEventListener("submit", async (event) => {
 
 elements.locationInput.addEventListener("input", () => queueSuggestionSearch(elements.locationInput.value));
 elements.locationInput.addEventListener("blur", () => window.setTimeout(hideSuggestions, 120));
+elements.inatRadiusSelect?.addEventListener("change", (event) => {
+  const nextRadius = Number.parseInt(event.target.value, 10);
+  setInaturalistRadiusKm(nextRadius);
+});
 elements.locationSuggestions.addEventListener("click", (event) => {
   const option = event.target.closest("[data-suggestion-index]");
   if (!option) return;
@@ -2273,6 +2364,12 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && elements.imageModal && !elements.imageModal.hidden) closeImageModal();
   if (event.key === "Escape" && elements.feedbackModal && !elements.feedbackModal.hidden) closeFeedbackModal();
 });
+
+if (elements.inatRadiusSelect) {
+  elements.inatRadiusSelect.value = String(state.inatRadiusKm);
+}
+updateRadiusLegend();
+updateRegionalScopeCopy();
 
 state.feedbackLog = loadFeedbackLog();
 flushPendingFeedbackQueue().then(() => renderFeedbackUI());

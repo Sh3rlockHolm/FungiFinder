@@ -122,8 +122,9 @@ mushroom-forming fungal class `Agaricomycetes` within a 50 km radius:
 iNaturalist search filters in use:
 
 - `taxon_id=50814` to target `Agaricomycetes` and its descendants
-- `radius=50` to make the regional scope explicit
+- `radius=25|50|100` to make the regional scope explicit
 - `verifiable=true` and quality-grade filters for the regional cards
+- the map legend lets you switch between 25 km, 50 km, and 100 km
 
 If we later need to carve out more non-mushroom noise, `without_taxon_id=` is the
 taxonomy-based exclusion path iNaturalist supports. That is better than keyword

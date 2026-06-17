@@ -514,7 +514,7 @@ dd {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  max-width: min(320px, calc(100% - 28px));
+  max-width: min(420px, calc(100% - 28px));
   padding: 10px 12px;
   border: 1px solid rgba(31, 95, 45, 0.22);
   border-radius: 14px;
@@ -537,6 +537,28 @@ dd {
   line-height: 1.2;
 }
 
+.map-legend-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.map-legend-control select {
+  min-width: 82px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid rgba(31, 95, 45, 0.25);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.map-legend-hint {
+  display: none;
+}
+
 .map-legend-swatch {
   flex: 0 0 auto;
   width: 18px;
@@ -545,6 +567,18 @@ dd {
   border-radius: 50%;
   background: rgba(97, 184, 90, 0.28);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+
+@media (max-width: 720px) {
+  .map-legend {
+    max-width: calc(100% - 28px);
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .map-legend-control select {
+    min-width: 74px;
+  }
 }
 
 .leaflet-container {
