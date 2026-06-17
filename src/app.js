@@ -82,16 +82,17 @@ const elements = {
   coordinateForm: document.querySelector("#coordinateForm"),
   dataStatus: document.querySelector("#dataStatus"),
   detailCopy: document.querySelector("#detailCopy"),
+  detailConfidenceBadge: document.querySelector("#detailConfidenceBadge"),
   detailDateLabel: document.querySelector("#detailDateLabel"),
+  detailAdvancedMetrics: document.querySelector("#detailAdvancedMetrics"),
   detailMetrics: document.querySelector("#detailMetrics"),
   detailScore: document.querySelector("#detailScore"),
+  detailStatusBadge: document.querySelector("#detailStatusBadge"),
+  detailStatusNote: document.querySelector("#detailStatusNote"),
   detailVerdict: document.querySelector("#detailVerdict"),
   locationInput: document.querySelector("#locationInput"),
   locationSuggestions: document.querySelector("#locationSuggestions"),
   inatRadiusSelect: document.querySelector("#inatRadiusSelect"),
-  observationLayerToggle: document.querySelector("#observationLayerToggle"),
-  observationLayerInfo: document.querySelector("#observationLayerInfo"),
-  observationLayerCopy: document.querySelector("#observationLayerCopy"),
   mobileTabs: document.querySelector("#mobileTabs"),
   mapRadiusCopy: document.querySelector("[data-map-radius-copy]"),
   mobileOverviewSection: document.querySelector("#mobileOverviewSection"),
@@ -112,6 +113,7 @@ const elements = {
   imageModalTitle: document.querySelector("#imageModalTitle"),
   sampleButton: document.querySelector("#sampleButton"),
   seasonBadge: document.querySelector("#seasonBadge"),
+  observationLayerToggleButton: document.querySelector("#observationLayerToggleButton"),
   summaryLabel: document.querySelector("#summaryLabel"),
   todayScore: document.querySelector("#todayScore"),
   todayVerdict: document.querySelector("#todayVerdict"),
@@ -149,9 +151,11 @@ function savePreferredInaturalistRadiusKm(radiusKm) {
 
 function loadObservationLayerPreference() {
   try {
-    return localStorage.getItem(OBSERVATION_LAYER_STORAGE_KEY) === "true";
+    const stored = localStorage.getItem(OBSERVATION_LAYER_STORAGE_KEY);
+    if (stored === null) return true;
+    return stored === "true";
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -752,6 +756,35 @@ function persistenceLabel({ dryDays, crashPhase }) {
   return "Declining window";
 }
 
+function metricPillMarkup({ label, value, helper = "", className = "" }) {
+  const classes = ["metric-pill", className].filter(Boolean).join(" ");
+  return `
+    <div class="${classes}">
+      <span>${label}</span>
+      <strong>${value}</strong>
+      ${helper ? `<small>${helper}</small>` : ""}
+    </div>
+  `;
+}
+
+function outlookStatusNote({ isBestDay, persistence, confidence, signalClass }) {
+  if (isBestDay && (signalClass === "signal-low" || signalClass === "signal-limited")) {
+    return "The best nearby window still looks fairly modest.";
+  }
+  if (isBestDay) return "This looks like the strongest day coming up.";
+  if (persistence === "Fresh window") return "Recent conditions are still working in your favor.";
+  if (persistence === "Aging window") return "Worth checking, though the window may be fading.";
+  if (confidence === "High") return "A steady outlook, even if chances stay limited.";
+  return "Use the week ahead below to compare nearby days.";
+}
+
+function buildOutlookNarrative({ isBestDay, verdict, reasons }) {
+  const lead = isBestDay ? "Best day in the next 14 days." : "";
+  const verdictSentence = verdict && /[.!?]$/.test(verdict) ? verdict : verdict ? `${verdict}.` : "";
+  const supportingSentence = (reasons ?? []).slice(0, 2).join(" ");
+  return [lead, verdictSentence, supportingSentence].filter(Boolean).join(" ");
+}
+
 function getSeasonForDate(dateString, latitude) {
   const month = new Date(`${dateString}T12:00:00`).getUTCMonth() + 1;
   const northern = latitude >= 0;
@@ -799,7 +832,7 @@ function buildReasons({
   if (rain5dResponse >= 0.62) reasons.push("Recent moisture strongly supports mushrooms in the woods.");
   else if (rain5dResponse >= 0.4) reasons.push("Recent moisture support is moderate and still helpful.");
   else if (rainEventClass === "none") reasons.push("No recent meaningful rain is supporting woodland mushrooms.");
-  else reasons.push("Moisture support is present but limited.");
+  else reasons.push("Recent moisture has helped a little, but not by much.");
   if (Number.isFinite(humidityCarryoverSupport) && humidityCarryoverSupport >= 0.04) {
     reasons.push("Humid air is helping moisture persist after recent rain.");
   }
@@ -809,7 +842,7 @@ function buildReasons({
   else if (dryingPenalty >= 0.12 || crashPhase === "crash") reasons.push("Drying conditions are reducing mushroom quality and persistence.");
 
   if (avgTemp >= 30) reasons.push("Sustained heat reduces odds of finding good-condition mushrooms.");
-  if (nightlyMin < -1) reasons.push("Recent frost is a strong negative signal.");
+  if (nightlyMin < -1) reasons.push("Recent frost makes a good day in the woods much less likely.");
   else if (nightlyMin < 4) reasons.push("Cold nights reduce near-term foraging confidence.");
 
   return reasons.slice(0, 3);
@@ -1680,7 +1713,7 @@ function setSelectedLocation(latitude, longitude, label, shouldMoveMap = true) {
     state.radiusCircle.setLatLng([latitude, longitude]);
     state.radiusCircle.setRadius(state.inatRadiusKm * 1000);
   }
-  if (shouldMoveMap && state.map) state.map.setView([latitude, longitude], Math.max(state.map.getZoom(), 9));
+  if (state.map) fitMapToRadius();
 }
 
 function setInaturalistRadiusKm(radiusKm, shouldRefresh = true) {
@@ -1692,6 +1725,7 @@ function setInaturalistRadiusKm(radiusKm, shouldRefresh = true) {
     elements.inatRadiusSelect.value = String(radiusKm);
   }
   if (state.radiusCircle) state.radiusCircle.setRadius(radiusKm * 1000);
+  if (state.map) fitMapToRadius();
   updateRadiusLegend();
   updateRegionalScopeCopy();
   if (shouldRefresh && state.selected) {
@@ -1705,6 +1739,15 @@ function setObservationLayerEnabled(enabled, shouldRefresh = true) {
   updateObservationLayerUI();
   renderObservationMapLayer(state.regionalStats?.uniqueResearchObservations ?? []);
   if (shouldRefresh) renderRegionalStats();
+}
+
+function fitMapToRadius() {
+  if (!state.map || !state.radiusCircle) return;
+  state.map.invalidateSize(false);
+  state.map.fitBounds(state.radiusCircle.getBounds().pad(0.18), {
+    animate: false,
+    padding: [24, 24],
+  });
 }
 
 function buildSmoothPath(points) {
@@ -1843,7 +1886,6 @@ function renderCombinedChart() {
                 width="${Math.max(7, slotWidth - 4)}"
                 height="${opportunityRibbonHeight}"
               ></rect>
-              <text class="opportunity-label" x="${xAt(index)}" y="${opportunityRibbonY + (mobile ? 20 : 19)}" text-anchor="middle">${Math.round(day.score)}</text>
               ${isBestDay ? `<text class="opportunity-best-marker" x="${xAt(index)}" y="${opportunityRibbonY - 3}" text-anchor="middle">Best</text>` : ""}
             </g>
           `;
@@ -2002,7 +2044,7 @@ function setMobileTab(tab) {
   });
 }
 
-function renderSelectedDay() {
+function renderSelectedDayLegacy() {
   const selectedDay = getSelectedDay();
   if (!selectedDay) return;
   const moistureResponse = Number.isFinite(selectedDay?.diagnostics?.rain5dResponse)
@@ -2017,12 +2059,12 @@ function renderSelectedDay() {
   const persistence = persistenceLabel({ dryDays, crashPhase });
 
   const label = formatTimelineLabel(selectedDay.date);
-  elements.summaryLabel.textContent = "Opportunity signal";
+  elements.summaryLabel.textContent = "Today";
   elements.todayScore.textContent = signal.label;
   elements.todayVerdict.textContent = `${formatScore(selectedDay.score)} · ${selectedDay.verdict}`;
   elements.confidenceBadge.textContent = selectedDay.confidence;
-  elements.analysisTitle.textContent = `${label} timing view`;
-  elements.analysisCopy.textContent = "Scan the opportunity windows first; select a day for the weather context behind the signal.";
+  elements.analysisTitle.textContent = `${label}: at a glance`;
+  elements.analysisCopy.textContent = "Start with today’s outlook above, then compare the rest of the week below.";
   if (elements.seasonBadge) elements.seasonBadge.textContent = `${selectedDay.season} seasonal context`;
   elements.detailDateLabel.textContent = label;
   elements.detailScore.textContent = signal.label;
@@ -2031,14 +2073,104 @@ function renderSelectedDay() {
   const topReasons = (selectedDay.reasons ?? []).slice(0, 2).join(" ");
   elements.detailCopy.textContent = `${isBestDay ? "Best day in next 14 days. " : ""}${topReasons}`;
   elements.detailMetrics.innerHTML = `
-    <p class="metric-method-note">Signal readout: probability band first, numeric score second, with weather context underneath.</p>
-    <div class="metric-pill ${signal.className}"><span>Opportunity signal</span><strong>${signal.label}</strong></div>
-    <div class="metric-pill"><span>Model score</span><strong>${formatScore(selectedDay.score)}</strong></div>
-    <div class="metric-pill"><span>Moisture signal</span><strong>${moistureSignal}</strong></div>
-    <div class="metric-pill"><span>Persistence</span><strong>${persistence}</strong></div>
-    <div class="metric-pill"><span>Temp (3d)</span><strong>${Number.isFinite(selectedDay.tempMin3d) ? selectedDay.tempMin3d.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.tempAvg3d) ? selectedDay.tempAvg3d.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.tempMax3d) ? selectedDay.tempMax3d.toFixed(1) : "--"}&deg;C</strong></div>
-    <div class="metric-pill"><span>Humidity max (3d)</span><strong>${Number.isFinite(selectedDay.humidityMax3d) ? selectedDay.humidityMax3d.toFixed(0) : "--"} %</strong></div>
+    <p class="metric-method-note">A quick summary first, with extra weather detail underneath.</p>
+    <div class="metric-pill ${signal.className}"><span>Overall outlook</span><strong>${signal.label}</strong></div>
+    <div class="metric-pill"><span>Day rating</span><strong>${formatScore(selectedDay.score)}</strong></div>
+    <div class="metric-pill"><span>Recent moisture</span><strong>${moistureSignal}</strong></div>
+    <div class="metric-pill"><span>How long it may last</span><strong>${persistence}</strong></div>
+    <div class="metric-pill"><span>Recent temperatures</span><strong>${Number.isFinite(selectedDay.tempMin3d) ? selectedDay.tempMin3d.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.tempAvg3d) ? selectedDay.tempAvg3d.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.tempMax3d) ? selectedDay.tempMax3d.toFixed(1) : "--"}&deg;C</strong></div>
+    <div class="metric-pill"><span>Peak humidity</span><strong>${Number.isFinite(selectedDay.humidityMax3d) ? selectedDay.humidityMax3d.toFixed(0) : "--"} %</strong></div>
   `;
+  renderFeedbackUI();
+  renderRegionalStats();
+  renderDaySelector();
+  renderMobileForecastList();
+}
+
+function renderSelectedDay() {
+  const selectedDay = getSelectedDay();
+  if (!selectedDay) return;
+  const moistureResponse = Number.isFinite(selectedDay?.diagnostics?.rain5dResponse)
+    ? selectedDay.diagnostics.rain5dResponse
+    : Number.isFinite(selectedDay?.diagnostics?.rain5d_response)
+      ? selectedDay.diagnostics.rain5d_response
+      : null;
+  const dryDays = selectedDay?.diagnostics?.dryDaysSinceMeaningfulRain;
+  const crashPhase = selectedDay?.diagnostics?.crashPhase ?? null;
+  const signal = signalBandFromScore(selectedDay.score);
+  const moistureSignal = moistureSignalLabel(moistureResponse);
+  const persistence = persistenceLabel({ dryDays, crashPhase });
+  const label = formatTimelineLabel(selectedDay.date);
+  const isBestDay = selectedDay.date === getBestForecastDate(state.scoredDays);
+  const outlookNarrative = buildOutlookNarrative({
+    isBestDay,
+    verdict: selectedDay.verdict,
+    reasons: selectedDay.reasons,
+  });
+
+  elements.summaryLabel.textContent = "Today";
+  elements.todayScore.textContent = formatScore(selectedDay.score);
+  elements.todayVerdict.textContent = `${signal.shortLabel} outlook`;
+  elements.confidenceBadge.textContent = selectedDay.confidence;
+  elements.analysisTitle.textContent = `${label}: at a glance`;
+  elements.analysisCopy.textContent = "Start with today’s outlook above, then compare the rest of the week below.";
+  if (elements.seasonBadge) elements.seasonBadge.textContent = `${selectedDay.season} seasonal context`;
+
+  elements.detailDateLabel.textContent = label;
+  elements.detailScore.textContent = formatScore(selectedDay.score);
+  elements.detailVerdict.textContent = selectedDay.verdict;
+  if (elements.detailConfidenceBadge) elements.detailConfidenceBadge.textContent = selectedDay.confidence;
+  if (elements.detailStatusBadge) {
+    elements.detailStatusBadge.textContent = signal.shortLabel;
+    elements.detailStatusBadge.className = `detail-status-badge ${signal.className}`;
+  }
+  if (elements.detailStatusNote) {
+    elements.detailStatusNote.textContent = outlookStatusNote({
+      isBestDay,
+      persistence,
+      confidence: selectedDay.confidence,
+      signalClass: signal.className,
+    });
+  }
+  elements.detailCopy.textContent = outlookNarrative;
+  elements.detailMetrics.innerHTML = [
+    metricPillMarkup({
+      label: "Overall signal",
+      value: signal.shortLabel,
+      helper: "A quick read on how promising the day looks.",
+      className: signal.className,
+    }),
+    metricPillMarkup({
+      label: "Day rating",
+      value: formatScore(selectedDay.score),
+      helper: "Useful for comparing one day with another.",
+    }),
+    metricPillMarkup({
+      label: "Recent moisture",
+      value: moistureSignal,
+      helper: "How helpful recent wet weather has been.",
+    }),
+  ].join("");
+  if (elements.detailAdvancedMetrics) {
+    elements.detailAdvancedMetrics.innerHTML = [
+      metricPillMarkup({
+        label: "How long it may last",
+        value: persistence,
+        helper: "Whether the current pattern feels fresh, fading, or already slipping.",
+      }),
+      metricPillMarkup({
+        label: "Recent temperatures",
+        value: `${Number.isFinite(selectedDay.tempMin3d) ? selectedDay.tempMin3d.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.tempAvg3d) ? selectedDay.tempAvg3d.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.tempMax3d) ? selectedDay.tempMax3d.toFixed(1) : "--"}&deg;C`,
+        helper: "Low, average, and high temperatures over the past three days.",
+      }),
+      metricPillMarkup({
+        label: "Peak humidity",
+        value: `${Number.isFinite(selectedDay.humidityMax3d) ? selectedDay.humidityMax3d.toFixed(0) : "--"} %`,
+        helper: "The highest humidity reached in the past three days.",
+      }),
+    ].join("");
+  }
+
   renderFeedbackUI();
   renderRegionalStats();
   renderDaySelector();
@@ -2171,15 +2303,14 @@ function updateRadiusLegend() {
 
 function updateRegionalScopeCopy() {
   if (!elements.regionalCopy) return;
-  elements.regionalCopy.textContent = `Nearby mushroom observations within ${state.inatRadiusKm} km are context only; they support confidence and do not drive the timing score.`;
+  elements.regionalCopy.textContent = `Recent mushroom reports within ${state.inatRadiusKm} km offer extra local perspective around your chosen area.`;
 }
 
 function updateObservationLayerUI() {
-  if (elements.observationLayerToggle) {
-    elements.observationLayerToggle.checked = state.showObservationLayer;
-  }
-  if (elements.observationLayerCopy) {
-    elements.observationLayerCopy.hidden = !state.showObservationLayer;
+  if (elements.observationLayerToggleButton) {
+    elements.observationLayerToggleButton.classList.toggle("is-active", state.showObservationLayer);
+    elements.observationLayerToggleButton.setAttribute("aria-pressed", state.showObservationLayer ? "true" : "false");
+    elements.observationLayerToggleButton.textContent = state.showObservationLayer ? "Hide finds" : "Show finds";
   }
 }
 
@@ -2225,7 +2356,7 @@ async function analyzeLocation(location, shouldMoveMap = true) {
   setSelectedLocation(location.latitude, location.longitude, location.label, shouldMoveMap);
   setStatus("Loading");
   elements.combinedChart.innerHTML = `<div class="loading">Building the weather timeline...</div>`;
-  elements.detailCopy.textContent = "Loading weather context for the selected location.";
+  elements.detailCopy.textContent = "Loading the latest outlook for this location.";
   state.regionalStats = null;
   state.regionalPage = 1;
   state.regionalRenderedPage = 1;
@@ -2255,19 +2386,20 @@ async function analyzeLocation(location, shouldMoveMap = true) {
     if (usedWeatherFallback) {
       elements.analysisCopy.textContent =
         payload.forecastFallbackSource === "MET Norway"
-          ? "Primary forecast is temporarily unavailable; showing real MET Norway forecast data with recent archive context."
-          : "Primary forecast is temporarily unavailable; showing the latest available Open-Meteo model run.";
+          ? "Live forecast coverage is limited right now, so a backup forecast is being shown instead."
+          : "Live forecast coverage is limited right now, so the latest available forecast is being shown instead.";
     }
   } catch (error) {
     console.error(error);
     setStatus("Error");
     elements.combinedChart.innerHTML = `<div class="chart-empty">Weather data could not be loaded. Check the location and connection.</div>`;
-    elements.detailCopy.textContent = "Timeline data is unavailable right now.";
+    elements.detailCopy.textContent = "Today’s outlook is unavailable right now.";
   }
 }
 
 function initMap() {
   state.map = L.map("map", { zoomControl: true }).setView([state.selected.latitude, state.selected.longitude], 9);
+  window.__leaflet_map_instance = state.map;
 
   L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
     attribution: '&copy; OpenStreetMap contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
@@ -2295,6 +2427,9 @@ function initMap() {
     fillOpacity: 0.18,
     interactive: false,
   }).addTo(state.map);
+  window.__leaflet_radius_circle = state.radiusCircle;
+
+  fitMapToRadius();
 
   state.map.on("click", (event) => {
     analyzeLocation({
@@ -2311,6 +2446,11 @@ function initMap() {
       latitude: point.lat,
       longitude: point.lng,
     }, false);
+  });
+
+  window.addEventListener("resize", () => {
+    if (!state.map) return;
+    fitMapToRadius();
   });
 }
 
@@ -2332,12 +2472,8 @@ elements.inatRadiusSelect?.addEventListener("change", (event) => {
   const nextRadius = Number.parseInt(event.target.value, 10);
   setInaturalistRadiusKm(nextRadius);
 });
-elements.observationLayerToggle?.addEventListener("change", (event) => {
-  setObservationLayerEnabled(event.target.checked);
-});
-elements.observationLayerInfo?.addEventListener("click", () => {
-  if (!elements.observationLayerCopy) return;
-  elements.observationLayerCopy.hidden = !elements.observationLayerCopy.hidden;
+elements.observationLayerToggleButton?.addEventListener("click", () => {
+  setObservationLayerEnabled(!state.showObservationLayer);
 });
 elements.locationSuggestions.addEventListener("click", (event) => {
   const option = event.target.closest("[data-suggestion-index]");

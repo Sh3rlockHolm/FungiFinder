@@ -20,7 +20,7 @@
       <section class="control-pane" aria-label="Foraging location and forecast">
         <header class="brand">
           <div>
-            <p class="eyebrow">Weather-based field signal</p>
+            <p class="eyebrow">Mushroom forecast</p>
             <h1>FungiFinder</h1>
           </div>
           <span class="status-pill" id="dataStatus">Ready</span>
@@ -51,6 +51,17 @@
             Run
           </button>
         </form>
+        <div class="radius-control-row radius-control-row-inline">
+          <label class="radius-control" for="inatRadiusSelect">
+            <span>Search area</span>
+            <select id="inatRadiusSelect">
+              <option value="25">25 km</option>
+              <option value="50" selected>50 km</option>
+              <option value="100">100 km</option>
+            </select>
+          </label>
+          <p class="radius-control-copy">Choose how wide an area to include around your location.</p>
+        </div>
 
         <div class="summary-band" id="summaryBand">
           <div class="summary-clipart" aria-hidden="true">
@@ -58,16 +69,16 @@
             <span class="clipart-tree clipart-tree-small"></span>
             <span class="clipart-mushroom"></span>
           </div>
-          <span class="score-label" id="summaryLabel">Opportunity signal</span>
+          <span class="score-label" id="summaryLabel">Today</span>
           <strong id="todayScore">--</strong>
           <span id="todayVerdict">Choose a location to begin.</span>
           <span class="confidence-pill" id="confidenceBadge">Confidence</span>
         </div>
 
         <section class="feedback-panel" aria-label="Foraging feedback">
-          <p class="eyebrow">Field check-ins (future model tuning only)</p>
-          <h5>Trip feedback</h5>
-          <p class="analysis-copy">Check-ins are stored for future calibration and do not change current daily scores.</p>
+          <p class="eyebrow">Trip notes</p>
+          <h5>Share how it went</h5>
+          <p class="analysis-copy">Keep a simple record of what you found on each outing.</p>
           <button type="button" class="primary-button" id="openFeedbackModalButton">Trip feedback</button>
           <div class="feedback-sync-row">
             <span class="feedback-sync-badge" id="feedbackSyncBadge">Sync pending</span>
@@ -83,18 +94,30 @@
       </section>
 
       <section class="map-pane" aria-label="Map and daily prognosis">
-        <div id="map" aria-label="Select a map location"></div>
-        <div class="map-legend" aria-label="iNaturalist radius legend">
-          <span class="map-legend-swatch" aria-hidden="true"></span>
-          <div class="map-legend-copy">
-            <strong>Mushroom search area</strong>
-            <span data-map-radius-copy>50 km around the selected point</span>
+        <div class="map-stage">
+          <div id="map" aria-label="Select a map location"></div>
+          <div class="map-overlay-controls" aria-label="Map display controls">
+            <button
+              class="map-toggle-button is-active"
+              id="observationLayerToggleButton"
+              type="button"
+              aria-pressed="true"
+            >
+              Mushroom map
+            </button>
+          </div>
+          <div class="map-legend" aria-label="iNaturalist radius legend">
+            <span class="map-legend-swatch" aria-hidden="true"></span>
+            <div class="map-legend-copy">
+              <strong>Mushroom search area</strong>
+              <span data-map-radius-copy>50 km around the selected point</span>
+            </div>
           </div>
         </div>
         <section class="forecast-panel" aria-label="Daily mushroom prognosis">
           <div class="forecast-heading">
             <div>
-              <p class="eyebrow">Past context + next 14-day timing view</p>
+              <p class="eyebrow">Local forecast</p>
               <h2>Foraging Outlook</h2>
             </div>
             <div class="place-actions">
@@ -110,33 +133,14 @@
               </a>
             </div>
           </div>
-          <div class="radius-control-row">
-            <label class="radius-control" for="inatRadiusSelect">
-              <span>Search area</span>
-              <select id="inatRadiusSelect">
-                <option value="25">25 km</option>
-                <option value="50" selected>50 km</option>
-                <option value="100">100 km</option>
-              </select>
-            </label>
-            <p class="radius-control-copy">Choose how wide the nearby mushroom context should be.</p>
-          </div>
-          <div class="map-option-row">
-            <label class="map-option" for="observationLayerToggle">
-              <input id="observationLayerToggle" type="checkbox">
-              <span>Only show mushrooms on map</span>
-            </label>
-            <button class="info-chip" id="observationLayerInfo" type="button" aria-label="What does showing mushroom finds on the map do?">i</button>
-            <p class="map-option-copy" id="observationLayerCopy" hidden>Shows only mushroom observations as small photo circles on the map. Turn it off for a cleaner view.</p>
-          </div>
-          <section class="analysis-panel" aria-label="Selected day evidence">
+          <section class="analysis-panel" aria-label="Selected day outlook and evidence">
             <div class="analysis-header">
               <div>
-                <p class="eyebrow">Timing evidence</p>
-                <h3 id="analysisTitle">Today</h3>
+                <p class="eyebrow">Today’s outlook</p>
+                <h3 id="analysisTitle">Choose a day to inspect</h3>
               </div>
               <p class="analysis-copy" id="analysisCopy">
-                Tap a day below or in the chart to inspect it.
+                Your clearest read for today, followed by the week ahead.
               </p>
             </div>
             <nav class="mobile-tabs" id="mobileTabs" aria-label="Mobile content sections">
@@ -144,51 +148,61 @@
               <button type="button" class="mobile-tab" data-mobile-tab="details">Details</button>
               <button type="button" class="mobile-tab" data-mobile-tab="examples">Examples</button>
             </nav>
+            <section class="mobile-section is-active" id="mobileDetailsSection">
+              <section class="detail-panel detail-panel-hero" id="detailPanel" aria-label="Selected day outlook">
+                <div class="detail-header detail-header-hero">
+                  <div>
+                    <p class="eyebrow">Today</p>
+                    <h4 id="detailDateLabel">Today</h4>
+                    <div class="detail-status-row">
+                      <span class="detail-status-badge" id="detailStatusBadge">Limited</span>
+                      <span class="detail-status-note" id="detailStatusNote">See how the next few days compare below.</span>
+                    </div>
+                  </div>
+                  <div class="detail-score-card">
+                    <span class="detail-score-label">Today’s rating</span>
+                    <strong id="detailScore">--</strong>
+                    <span id="detailVerdict">--</span>
+                    <span class="confidence-pill detail-confidence-pill" id="detailConfidenceBadge">Confidence</span>
+                  </div>
+                </div>
+                <p class="detail-copy detail-copy-hero" id="detailCopy">
+                  Select any day to see how promising it looks and what is shaping the outlook.
+                </p>
+                <div class="detail-metrics detail-metrics-primary" id="detailMetrics"></div>
+                <details class="detail-advanced">
+                  <summary>See weather details</summary>
+                  <div class="detail-metrics detail-metrics-secondary" id="detailAdvancedMetrics"></div>
+                </details>
+              </section>
+            </section>
             <section class="mobile-section is-active" id="mobileOverviewSection">
               <div class="timeline-controls" id="daySelector" aria-label="Choose day"></div>
               <section class="chart-card" id="chartCard" aria-label="Combined weather timeline">
                 <div class="chart-card-header">
                   <div>
-                    <h4>Opportunity windows</h4>
-                    <p>Signal bands first, with rain and temperature as supporting context.</p>
+                    <h4>Week ahead</h4>
+                    <p>Compare the most promising days, then look at rain and temperature for the day you’ve selected.</p>
                   </div>
                   <span class="chart-unit">7 days back, next 14</span>
                 </div>
                 <div class="chart-legend" aria-label="Chart legend">
-                  <span class="legend-item"><span class="legend-swatch legend-signal" aria-hidden="true"></span>Opportunity signal</span>
+                  <span class="legend-item"><span class="legend-swatch legend-signal" aria-hidden="true"></span>Best chances</span>
                   <span class="legend-item"><span class="legend-swatch legend-bar" aria-hidden="true"></span>Rainfall</span>
-                  <span class="legend-item"><span class="legend-swatch legend-line-min" aria-hidden="true"></span>Min temp</span>
+                  <span class="legend-item"><span class="legend-swatch legend-line-min" aria-hidden="true"></span>Low temp</span>
                   <span class="legend-item"><span class="legend-swatch legend-line-avg" aria-hidden="true"></span>Avg temp</span>
-                  <span class="legend-item"><span class="legend-swatch legend-line-max" aria-hidden="true"></span>Max temp</span>
+                  <span class="legend-item"><span class="legend-swatch legend-line-max" aria-hidden="true"></span>High temp</span>
                 </div>
                 <div class="mobile-forecast-list" id="mobileForecastList" aria-label="Choose a forecast day"></div>
                 <div class="chart-mount chart-mount-wide" id="combinedChart" tabindex="0"></div>
               </section>
             </section>
-            <section class="mobile-section" id="mobileDetailsSection">
-              <section class="detail-panel" id="detailPanel" aria-label="Selected day detail">
-                <div class="detail-header">
-                  <div>
-                    <p class="eyebrow">Daily signal card</p>
-                    <h4 id="detailDateLabel">Today</h4>
-                  </div>
-                  <div class="detail-score">
-                    <strong id="detailScore">--</strong>
-                    <span id="detailVerdict">--</span>
-                  </div>
-                </div>
-                <div class="detail-metrics" id="detailMetrics"></div>
-                <p class="detail-copy" id="detailCopy">
-                  The highlighted day explains how general growing conditions line up at that point in the timeline.
-                </p>
-              </section>
-            </section>
             <section class="mobile-section" id="mobileExamplesSection">
-              <section class="regional-panel" aria-label="Regional observation signal">
+              <section class="regional-panel" aria-label="Nearby mushroom activity">
                 <div class="regional-heading">
                   <div>
-                    <p class="eyebrow">Background species context</p>
-                    <h4>Nearby mushroom reports</h4>
+                    <p class="eyebrow">Nearby activity</p>
+                    <h4>Recent mushroom reports</h4>
                   </div>
                   <div class="regional-clipart" aria-hidden="true">
                     <span class="clipart-tree"></span>
@@ -199,7 +213,7 @@
                 <div class="regional-grid" id="regionalMetrics"></div>
                 <div class="regional-tiles" id="regionalTiles" aria-label="Recent nearby research observations"></div>
                 <div class="regional-pagination" id="regionalPagination"></div>
-                <p class="detail-copy" id="regionalCopy">Nearby mushroom observations within 50 km are context only; they support confidence and do not drive the timing score.</p>
+                <p class="detail-copy" id="regionalCopy">Recent nearby reports can help you understand what people are finding around you.</p>
               </section>
             </section>
           </section>
