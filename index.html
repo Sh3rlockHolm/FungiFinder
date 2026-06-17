@@ -90,17 +90,6 @@
             <strong>Mushroom search area</strong>
             <span>50 km around the selected point</span>
           </div>
-          <label class="map-legend-control" aria-label="Search radius">
-            <span class="sr-only">Search radius</span>
-            <select id="inatRadiusSelect">
-              <option value="25">25 km</option>
-              <option value="50" selected>50 km</option>
-              <option value="100">100 km</option>
-            </select>
-          </label>
-          <div class="map-legend-hint">
-            <span>Change the search area</span>
-          </div>
         </div>
         <section class="forecast-panel" aria-label="Daily mushroom prognosis">
           <div class="forecast-heading">
@@ -120,6 +109,17 @@
                 Open in Google Maps
               </a>
             </div>
+          </div>
+          <div class="radius-control-row">
+            <label class="radius-control" for="inatRadiusSelect">
+              <span>Search area</span>
+              <select id="inatRadiusSelect">
+                <option value="25">25 km</option>
+                <option value="50" selected>50 km</option>
+                <option value="100">100 km</option>
+              </select>
+            </label>
+            <p class="radius-control-copy">Choose how wide the nearby mushroom context should be.</p>
           </div>
           <section class="analysis-panel" aria-label="Selected day evidence">
             <div class="analysis-header">

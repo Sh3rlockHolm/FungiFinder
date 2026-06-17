@@ -87,6 +87,7 @@ const elements = {
   locationSuggestions: document.querySelector("#locationSuggestions"),
   inatRadiusSelect: document.querySelector("#inatRadiusSelect"),
   mobileTabs: document.querySelector("#mobileTabs"),
+  mapLegendCopy: document.querySelector(".map-legend-copy"),
   mobileOverviewSection: document.querySelector("#mobileOverviewSection"),
   mobileDetailsSection: document.querySelector("#mobileDetailsSection"),
   mobileExamplesSection: document.querySelector("#mobileExamplesSection"),
@@ -2065,8 +2066,7 @@ async function resolveLocationInput(value) {
 }
 
 function updateRadiusLegend() {
-  if (!elements.inatRadiusSelect) return;
-  const label = elements.inatRadiusSelect.closest(".map-legend")?.querySelector(".map-legend-copy");
+  const label = elements.mapLegendCopy;
   if (label) label.textContent = `${state.inatRadiusKm} km around the selected point`;
 }
 

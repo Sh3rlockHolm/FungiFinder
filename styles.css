@@ -485,7 +485,7 @@ dd {
 
 .map-pane {
   display: grid;
-  grid-template-rows: minmax(220px, 28vh) 1fr;
+  grid-template-rows: minmax(280px, 36vh) 1fr;
   min-width: 0;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-xl);
@@ -543,22 +543,6 @@ dd {
   min-width: 0;
 }
 
-.map-legend-control select {
-  min-width: 82px;
-  height: 34px;
-  padding: 0 8px;
-  border: 1px solid rgba(31, 95, 45, 0.25);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.82);
-  color: var(--ink);
-  font: inherit;
-  font-size: 0.8rem;
-}
-
-.map-legend-hint {
-  display: none;
-}
-
 .map-legend-swatch {
   flex: 0 0 auto;
   width: 18px;
@@ -569,15 +553,54 @@ dd {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
 }
 
+.radius-control-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-top: 4px;
+}
+
+.radius-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: rgba(247, 244, 236, 0.82);
+}
+
+.radius-control span {
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.radius-control select {
+  min-width: 92px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid rgba(31, 95, 45, 0.25);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.radius-control-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 @media (max-width: 720px) {
   .map-legend {
     max-width: calc(100% - 28px);
     flex-wrap: wrap;
     align-items: flex-start;
-  }
-
-  .map-legend-control select {
-    min-width: 74px;
   }
 }
 
