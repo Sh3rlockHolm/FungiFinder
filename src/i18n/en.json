@@ -156,9 +156,9 @@
     "peak_humidity": "Peak humidity",
     "peak_humidity_helper": "The highest humidity reached in the past three days.",
     "search_radius": "Search radius",
-    "recent_reports": "Recent reports",
-    "research_grade_14d": "Research-grade (14d)",
-    "unique_species": "Unique species"
+    "recent_reports": "Nearby observations (14d)",
+    "research_grade_14d": "Research-grade reports (14d)",
+    "unique_species": "Distinct species shown"
   },
   "notes": {
     "best_modest": "The best nearby window still looks fairly modest.",
@@ -188,7 +188,7 @@
     "section_aria": "Nearby mushroom activity",
     "heading": "Recent mushroom activity",
     "tiles_aria": "Recent nearby research observations",
-    "copy": "Recent mushroom reports within {{radius}} km offer extra local perspective around your chosen area.",
+    "copy": "Counts summarize the last 14 days within {{radius}} km. The tiles below show 8 distinct nearby observations per page.",
     "no_observations": "No recent research-grade observations to show.",
     "unknown_mushroom": "Unknown mushroom",
     "date_unknown": "Date unknown",
