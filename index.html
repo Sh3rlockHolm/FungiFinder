@@ -13,54 +13,62 @@
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
       crossorigin=""
     />
-    <link rel="stylesheet" href="./styles.css?v=20260618-1" />
+    <link rel="stylesheet" href="./styles.css?v=20260619-1" />
   </head>
   <body>
     <main class="app-shell">
-      <section class="control-pane" aria-label="Foraging controls and today's outlook">
+      <section class="control-pane" aria-label="Foraging controls and today's outlook" data-i18n-aria-label="header.controls_aria">
         <header class="brand">
           <div>
             <p class="eyebrow">FungiFinder</p>
             <h1>FungiFinder</h1>
           </div>
-          <span class="status-pill" id="dataStatus">Ready</span>
+          <div class="header-utilities">
+            <div class="locale-switcher" aria-label="Language" data-i18n-aria-label="locale.label">
+              <button type="button" class="locale-button" data-locale-option="en">EN</button>
+              <button type="button" class="locale-button" data-locale-option="de">DE</button>
+              <button type="button" class="locale-button" data-locale-option="ru">RU</button>
+            </div>
+            <span class="status-pill" id="dataStatus">Ready</span>
+          </div>
         </header>
 
-        <section class="control-strip" aria-label="Location controls">
+        <section class="control-strip" aria-label="Location controls" data-i18n-aria-label="header.controls_section_aria">
           <form class="coordinate-form search-form" id="coordinateForm">
             <label class="search-label" for="locationInput">
-              Search location
+              <span data-i18n="header.search_label">Search location</span>
               <input
                 autocomplete="off"
                 id="locationInput"
                 name="location"
                 value="Black Forest, Germany"
                 placeholder="Place name or latitude, longitude"
+                data-i18n-placeholder="header.search_placeholder"
               />
               <div class="location-suggestions" id="locationSuggestions" hidden></div>
             </label>
-            <button class="icon-button" type="submit" aria-label="Update outlook" title="Update outlook">
+            <button class="icon-button" type="submit" aria-label="Update outlook" title="Update outlook" data-i18n="header.submit" data-i18n-aria-label="header.submit_aria" data-i18n-title="header.submit_aria">
               Go
             </button>
           </form>
-          <div class="location-actions" aria-label="Quick location actions">
-            <button id="useLocationButton" class="primary-button" type="button">
+          <div class="location-actions" aria-label="Quick location actions" data-i18n-aria-label="header.quick_actions_aria">
+            <button id="useLocationButton" class="primary-button" type="button" data-i18n="header.use_location">
               Use location
             </button>
-            <button id="sampleButton" class="ghost-button" type="button">
+            <button id="sampleButton" class="ghost-button" type="button" data-i18n="header.sample_location">
               Try Black Forest
             </button>
           </div>
           <div class="radius-control-row radius-control-row-inline">
             <label class="radius-control" for="inatRadiusSelect">
-              <span>Search area</span>
+              <span data-i18n="header.search_area">Search area</span>
               <select id="inatRadiusSelect">
                 <option value="25">25 km</option>
                 <option value="50" selected>50 km</option>
                 <option value="100">100 km</option>
               </select>
             </label>
-            <p class="radius-control-copy">Set how wide the search radius should be around your selected point.</p>
+            <p class="radius-control-copy" data-i18n="header.search_area_copy">Set how wide the search radius should be around your selected point.</p>
           </div>
         </section>
 
@@ -75,12 +83,10 @@
           <div class="summary-band-main">
             <div class="summary-copy-block">
               <strong id="todayVerdict">Choose a location to begin.</strong>
-              <p class="summary-explanation" id="summaryExplanation">
-                Pick a place to see today’s outlook and the strongest nearby window.
-              </p>
+              <p class="summary-explanation" id="summaryExplanation">Pick a place to see today's outlook and the strongest nearby window.</p>
             </div>
             <div class="summary-score-card">
-              <span class="summary-score-label">Forage score</span>
+              <span class="summary-score-label" data-i18n="header.forage_score">Forage score</span>
               <strong id="todayScore">--</strong>
             </div>
           </div>
@@ -88,11 +94,11 @@
         </div>
       </section>
 
-      <section class="map-pane" aria-label="Map preview">
+      <section class="map-pane" aria-label="Map preview" data-i18n-aria-label="map.section_aria">
         <div class="map-card-header">
           <div>
-            <p class="eyebrow">Map preview</p>
-            <h2>Search area</h2>
+            <p class="eyebrow" data-i18n="map.section_aria">Map preview</p>
+            <h2 data-i18n="map.title">Search area</h2>
           </div>
           <div class="place-actions">
             <span id="placeLabel">48.0000, 8.0000</span>
@@ -102,66 +108,65 @@
               href="https://www.google.com/maps?q=48.0000,8.0000"
               target="_blank"
               rel="noopener noreferrer"
+              data-i18n="map.open_maps"
             >
               Open in Maps
             </a>
-            <button type="button" class="ghost-button map-link-button" id="expandMapButton">Expand map</button>
+            <button type="button" class="ghost-button map-link-button" id="expandMapButton" data-i18n="map.expand">Expand map</button>
           </div>
         </div>
         <div class="map-stage">
-          <div id="map" aria-label="Select a map location"></div>
-          <div class="map-legend" aria-label="Search radius">
+          <div id="map" aria-label="Select a map location" data-i18n-aria-label="map.map_aria"></div>
+          <div class="map-legend" aria-label="Search radius" data-i18n-aria-label="map.legend_aria">
             <span class="map-legend-swatch" aria-hidden="true"></span>
             <div class="map-legend-copy">
-              <strong>Mushroom search area</strong>
+              <strong data-i18n="map.legend_title">Mushroom search area</strong>
               <span data-map-radius-copy>50 km around the selected point</span>
             </div>
           </div>
         </div>
       </section>
 
-      <section class="forecast-panel" aria-label="Seven day outlook">
-        <section class="analysis-panel" aria-label="Selected day outlook and evidence">
+      <section class="forecast-panel" aria-label="Seven day outlook" data-i18n-aria-label="forecast.section_aria">
+        <section class="analysis-panel" aria-label="Selected day outlook and evidence" data-i18n-aria-label="forecast.analysis_aria">
           <div class="analysis-header">
             <div>
-              <p class="eyebrow">Week ahead</p>
+              <p class="eyebrow" data-i18n="forecast.week_ahead">Week ahead</p>
               <h3 id="analysisTitle">Choose a day to inspect</h3>
             </div>
-            <p class="analysis-copy" id="analysisCopy">
-              Check today first, then compare the next best nearby days.
-            </p>
+            <p class="analysis-copy" id="analysisCopy">Check today first, then compare the next best nearby days.</p>
           </div>
-          <nav class="mobile-tabs" id="mobileTabs" aria-label="Mobile content sections">
-            <button type="button" class="mobile-tab is-active" data-mobile-tab="overview">Overview</button>
-            <button type="button" class="mobile-tab" data-mobile-tab="details">Details</button>
-            <button type="button" class="mobile-tab" data-mobile-tab="examples">Nearby reports</button>
+          <nav class="mobile-tabs" id="mobileTabs" aria-label="Mobile content sections" data-i18n-aria-label="forecast.tabs_aria">
+            <button type="button" class="mobile-tab is-active" data-mobile-tab="overview" data-i18n="forecast.tab_overview">Overview</button>
+            <button type="button" class="mobile-tab" data-mobile-tab="details" data-i18n="forecast.tab_details">Details</button>
+            <button type="button" class="mobile-tab" data-mobile-tab="examples" data-i18n="forecast.tab_examples">Nearby reports</button>
           </nav>
           <section class="mobile-section is-active" id="mobileOverviewSection">
-            <div class="timeline-controls" id="daySelector" aria-label="Choose day"></div>
-            <section class="chart-card" id="chartCard" aria-label="Combined weather timeline">
+            <div class="timeline-controls" id="daySelector" aria-label="Choose day" data-i18n-aria-label="forecast.day_selector_aria"></div>
+            <section class="chart-card" id="chartCard" aria-label="Combined weather timeline" data-i18n-aria-label="forecast.chart_aria">
               <div class="chart-card-header">
                 <div>
-                  <h4>Next 14 days</h4>
-                  <p>Use the forecast strip to compare likely windows, then inspect the selected day below.</p>
+                  <h4 data-i18n="forecast.chart_title">Next 14 days</h4>
+                  <p data-i18n="forecast.chart_copy">Use the forecast strip to compare likely windows, then inspect the selected day below.</p>
                 </div>
-                <span class="chart-unit">7 days back, next 14</span>
+                <span class="chart-unit" data-i18n="forecast.chart_range">7 days back, next 14</span>
               </div>
-              <div class="chart-legend" aria-label="Chart legend">
-                <span class="legend-item"><span class="legend-swatch legend-signal" aria-hidden="true"></span>Best window</span>
-                <span class="legend-item"><span class="legend-swatch legend-bar" aria-hidden="true"></span>Rain</span>
-                <span class="legend-item"><span class="legend-swatch legend-line-min" aria-hidden="true"></span>Low</span>
-                <span class="legend-item"><span class="legend-swatch legend-line-avg" aria-hidden="true"></span>Average</span>
-                <span class="legend-item"><span class="legend-swatch legend-line-max" aria-hidden="true"></span>High</span>
+              <div class="chart-legend" aria-label="Chart legend" data-i18n-aria-label="forecast.chart_legend_aria">
+                <span class="legend-item"><span class="legend-swatch legend-signal" aria-hidden="true"></span><span data-i18n="forecast.legend_best_window">Best window</span></span>
+                <span class="legend-item"><span class="legend-swatch legend-bar" aria-hidden="true"></span><span data-i18n="forecast.legend_rain">Rain</span></span>
+                <span class="legend-item"><span class="legend-swatch legend-line-min" aria-hidden="true"></span><span data-i18n="forecast.legend_low">Low</span></span>
+                <span class="legend-item"><span class="legend-swatch legend-line-avg" aria-hidden="true"></span><span data-i18n="forecast.legend_average">Average</span></span>
+                <span class="legend-item"><span class="legend-swatch legend-line-max" aria-hidden="true"></span><span data-i18n="forecast.legend_high">High</span></span>
               </div>
-              <div class="mobile-forecast-list" id="mobileForecastList" aria-label="Choose a forecast day"></div>
+              <div class="mobile-forecast-list" id="mobileForecastList" aria-label="Choose a forecast day" data-i18n-aria-label="forecast.forecast_list_aria"></div>
               <div class="chart-mount chart-mount-wide" id="combinedChart" tabindex="0"></div>
             </section>
           </section>
           <section class="mobile-section is-active" id="mobileDetailsSection">
-            <section class="detail-panel" id="detailPanel" aria-label="Selected day details">
+            <section class="detail-panel" id="detailPanel" aria-label="Selected day details" data-i18n-aria-label="forecast.details_aria">
               <div class="detail-header detail-header-hero">
                 <div>
-                  <p class="eyebrow">Selected day</p>
+                  <p class="eyebrow" data-i18n="forecast.selected_day">Selected day</p>
                   <h4 id="detailDateLabel">Today</h4>
                 </div>
                 <div class="detail-inline-summary">
@@ -171,27 +176,25 @@
                 </div>
               </div>
               <p class="detail-status-note" id="detailStatusNote">See how the next few days compare below.</p>
-              <p class="detail-copy" id="detailCopy">
-                Select any day to see how promising it looks and what is shaping the outlook.
-              </p>
+              <p class="detail-copy" id="detailCopy">Select any day to see how promising it looks and what is shaping the outlook.</p>
               <div class="detail-metrics detail-metrics-primary" id="detailMetrics"></div>
               <details class="detail-advanced">
-                <summary>Weather details</summary>
+                <summary data-i18n="forecast.weather_details">Weather details</summary>
                 <div class="detail-metrics detail-metrics-secondary" id="detailAdvancedMetrics"></div>
               </details>
             </section>
           </section>
           <section class="mobile-section is-active" id="mobileExamplesSection">
-            <section class="regional-panel" aria-label="Nearby mushroom activity">
+            <section class="regional-panel" aria-label="Nearby mushroom activity" data-i18n-aria-label="regional.section_aria">
               <div class="regional-heading">
                 <div>
-                  <p class="eyebrow">Nearby reports</p>
-                  <h4>Recent mushroom activity</h4>
+                  <p class="eyebrow" data-i18n="forecast.tab_examples">Nearby reports</p>
+                  <h4 data-i18n="regional.heading">Recent mushroom activity</h4>
                 </div>
                 <span class="chart-unit" id="regionalConfidence"></span>
               </div>
               <div class="regional-grid" id="regionalMetrics"></div>
-              <div class="regional-tiles" id="regionalTiles" aria-label="Recent nearby research observations"></div>
+              <div class="regional-tiles" id="regionalTiles" aria-label="Recent nearby research observations" data-i18n-aria-label="regional.tiles_aria"></div>
               <div class="regional-pagination" id="regionalPagination"></div>
               <p class="detail-copy" id="regionalCopy">Recent nearby reports can help you understand what people are finding around you.</p>
             </section>
@@ -199,19 +202,19 @@
         </section>
       </section>
 
-      <section class="feedback-panel" aria-label="Trip notes">
-        <p class="eyebrow">Trip notes</p>
-        <h5>Keep a simple field log</h5>
-        <p class="analysis-copy">Save a quick note after each outing so you can compare forecasts with real finds.</p>
-        <button type="button" class="primary-button" id="openFeedbackModalButton">Add trip result</button>
+      <section class="feedback-panel" aria-label="Trip notes" data-i18n-aria-label="feedback.section_aria">
+        <p class="eyebrow" data-i18n="feedback.eyebrow">Trip notes</p>
+        <h5 data-i18n="feedback.title">Keep a simple field log</h5>
+        <p class="analysis-copy" data-i18n="feedback.copy">Save a quick note after each outing so you can compare forecasts with real finds.</p>
+        <button type="button" class="primary-button" id="openFeedbackModalButton" data-i18n="feedback.add_result">Add trip result</button>
         <div class="feedback-sync-row">
           <span class="feedback-sync-badge" id="feedbackSyncBadge">Sync pending</span>
-          <button type="button" class="ghost-button feedback-copy-error" id="copyFeedbackErrorButton" hidden>Copy error text</button>
+          <button type="button" class="ghost-button feedback-copy-error" id="copyFeedbackErrorButton" hidden data-i18n="feedback.copy_error">Copy error text</button>
         </div>
         <p class="feedback-status" id="feedbackStatus">No feedback logged for this day yet.</p>
         <div class="feedback-actions">
-          <button type="button" class="ghost-button" id="exportFeedbackButton">Copy feedback log</button>
-          <button type="button" class="ghost-button" id="clearFeedbackButton">Clear log</button>
+          <button type="button" class="ghost-button" id="exportFeedbackButton" data-i18n="feedback.export">Copy feedback log</button>
+          <button type="button" class="ghost-button" id="clearFeedbackButton" data-i18n="feedback.clear">Clear log</button>
         </div>
       </section>
     </main>
@@ -220,7 +223,7 @@
       <div class="modal-window image-modal-window" role="dialog" aria-modal="true" aria-labelledby="imageModalTitle">
         <div class="modal-header">
           <h3 id="imageModalTitle">Observation</h3>
-          <button class="icon-button modal-close" id="closeImageModalButton" type="button" aria-label="Close observation popup">X</button>
+          <button class="icon-button modal-close" id="closeImageModalButton" type="button" aria-label="Close observation popup" data-i18n-aria-label="modals.observation_aria">X</button>
         </div>
         <div class="image-modal-body">
           <img id="imageModalPreview" alt="Observation preview" data-modal-photo>
@@ -239,37 +242,37 @@
     <div class="modal-backdrop" id="mapModal" hidden>
       <div class="modal-window map-modal-window" role="dialog" aria-modal="true" aria-labelledby="mapModalTitle">
         <div class="modal-header">
-          <h3 id="mapModalTitle">Search area</h3>
-          <button class="icon-button modal-close" id="closeMapModalButton" type="button" aria-label="Close expanded map">X</button>
+          <h3 id="mapModalTitle" data-i18n="map.modal_title">Search area</h3>
+          <button class="icon-button modal-close" id="closeMapModalButton" type="button" aria-label="Close expanded map" data-i18n-aria-label="map.modal_close_aria">X</button>
         </div>
         <div class="map-modal-body">
-          <div id="expandedMap" aria-label="Expanded search area map"></div>
+          <div id="expandedMap" aria-label="Expanded search area map" data-i18n-aria-label="map.expanded_map_aria"></div>
         </div>
       </div>
     </div>
     <div class="modal-backdrop" id="feedbackModal" hidden>
       <div class="modal-window feedback-modal-window" role="dialog" aria-modal="true" aria-labelledby="feedbackModalTitle">
         <div class="modal-header">
-          <h3 id="feedbackModalTitle">Did you find mushrooms today?</h3>
-          <button class="icon-button modal-close" id="closeFeedbackModalButton" type="button" aria-label="Close feedback form">X</button>
+          <h3 id="feedbackModalTitle" data-i18n="feedback.modal_title">Did you find mushrooms today?</h3>
+          <button class="icon-button modal-close" id="closeFeedbackModalButton" type="button" aria-label="Close feedback form" data-i18n-aria-label="feedback.modal_close_aria">X</button>
         </div>
         <div class="feedback-modal-body">
           <label class="feedback-duration">
-            Trip duration
-            <select id="tripDurationSelect" aria-label="Trip duration">
-              <option value="short">Less than 30 mins</option>
-              <option value="medium" selected>Under two hours (30-120 mins)</option>
-              <option value="long">Longer than 2 hrs</option>
+            <span data-i18n="feedback.trip_duration">Trip duration</span>
+            <select id="tripDurationSelect" aria-label="Trip duration" data-i18n-aria-label="feedback.trip_duration">
+              <option value="short" data-i18n="feedback.duration.short">Less than 30 mins</option>
+              <option value="medium" selected data-i18n="feedback.duration.medium">Under two hours (30-120 mins)</option>
+              <option value="long" data-i18n="feedback.duration.long">Longer than 2 hrs</option>
             </select>
           </label>
           <div class="feedback-options" id="feedbackOptions">
-            <button type="button" class="ghost-button feedback-option" data-feedback-value="Not at all">Not at all</button>
-            <button type="button" class="ghost-button feedback-option" data-feedback-value="One or Two">One or Two</button>
-            <button type="button" class="ghost-button feedback-option" data-feedback-value="Several">Several</button>
-            <button type="button" class="ghost-button feedback-option" data-feedback-value="A ton!">A ton!</button>
+            <button type="button" class="ghost-button feedback-option" data-feedback-value="none" data-i18n="feedback.options.none">Not at all</button>
+            <button type="button" class="ghost-button feedback-option" data-feedback-value="one_two" data-i18n="feedback.options.one_two">One or Two</button>
+            <button type="button" class="ghost-button feedback-option" data-feedback-value="several" data-i18n="feedback.options.several">Several</button>
+            <button type="button" class="ghost-button feedback-option" data-feedback-value="many" data-i18n="feedback.options.many">A ton!</button>
           </div>
           <div class="feedback-modal-actions">
-            <button type="button" class="primary-button" id="submitFeedbackButton">Submit feedback</button>
+            <button type="button" class="primary-button" id="submitFeedbackButton" data-i18n="feedback.submit">Submit feedback</button>
           </div>
         </div>
       </div>
@@ -280,7 +283,7 @@
       integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
       crossorigin=""
     ></script>
-    <script src="./src/runtime-config.js?v=20260618-1"></script>
-    <script type="module" src="./src/app.js?v=20260618-1"></script>
+    <script src="./src/runtime-config.js?v=20260619-1"></script>
+    <script type="module" src="./src/app.js?v=20260619-1"></script>
   </body>
 </html>

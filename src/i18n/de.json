@@ -1,0 +1,271 @@
+{
+  "meta": {
+    "title": "FungiFinder"
+  },
+  "locale": {
+    "label": "Sprache",
+    "en": "EN",
+    "de": "DE",
+    "ru": "RU"
+  },
+  "app": {
+    "name": "FungiFinder"
+  },
+  "status": {
+    "Ready": "Bereit",
+    "Loading": "Wird aktualisiert",
+    "Updated": "Aktualisiert",
+    "Limited": "Ersatzvorhersage",
+    "Error": "Nicht verf�gbar",
+    "Not found": "Nicht gefunden",
+    "Locating": "Standort wird gesucht",
+    "Denied": "Standort abgelehnt",
+    "No GPS": "Kein Standort",
+    "Unavailable": "Nicht verf�gbar",
+    "High": "Hohe Sicherheit",
+    "Medium": "Mittlere Sicherheit",
+    "Low": "Geringere Sicherheit",
+    "Data limited": "Begrenzte Daten"
+  },
+  "header": {
+    "controls_aria": "Sammelsteuerung und heutiger Ausblick",
+    "controls_section_aria": "Standortsteuerung",
+    "quick_actions_aria": "Schnellaktionen f�r den Standort",
+    "search_label": "Standort suchen",
+    "search_placeholder": "Ort oder Breiten-/L�ngengrad",
+    "submit": "Los",
+    "submit_aria": "Ausblick aktualisieren",
+    "use_location": "Standort nutzen",
+    "sample_location": "Schwarzwald testen",
+    "search_area": "Suchbereich",
+    "search_area_copy": "Lege fest, wie gro� der Suchradius um deinen gew�hlten Punkt sein soll.",
+    "today": "Heute",
+    "forage_score": "Fund-Score",
+    "default_date": "Tag w�hlen",
+    "default_outlook": "W�hle einen Standort, um zu beginnen.",
+    "default_explanation": "W�hle einen Ort, um den heutigen Ausblick und das st�rkste nahe Zeitfenster zu sehen."
+  },
+  "map": {
+    "section_aria": "Kartenvorschau",
+    "title": "Suchbereich",
+    "open_maps": "In Karten �ffnen",
+    "expand": "Karte erweitern",
+    "map_aria": "Ort auf der Karte w�hlen",
+    "legend_aria": "Suchradius",
+    "legend_title": "Pilz-Suchgebiet",
+    "radius_selected": "{{radius}} km um den gew�hlten Punkt",
+    "modal_title": "Suchbereich",
+    "modal_close_aria": "Erweiterte Karte schlie�en",
+    "expanded_map_aria": "Erweiterte Suchbereichskarte"
+  },
+  "forecast": {
+    "section_aria": "Sieben-Tage-Ausblick",
+    "analysis_aria": "Ausblick und Details f�r den gew�hlten Tag",
+    "week_ahead": "N�chste Tage",
+    "analysis_title_default": "Tag zum Pr�fen w�hlen",
+    "analysis_copy_default": "Pr�fe zuerst heute und vergleiche dann die n�chsten guten Tage.",
+    "tabs_aria": "Mobile Inhaltsbereiche",
+    "tab_overview": "�berblick",
+    "tab_details": "Details",
+    "tab_examples": "Nahe Meldungen",
+    "day_selector_aria": "Tag w�hlen",
+    "chart_aria": "Kombinierte Wetter-Zeitleiste",
+    "chart_svg_aria": "Kombinierte Wetter-Zeitleiste",
+    "chart_title": "N�chste 14 Tage",
+    "chart_copy": "Nutze die Vorhersageleiste, um wahrscheinliche Zeitfenster zu vergleichen, und pr�fe dann den gew�hlten Tag darunter.",
+    "chart_range": "7 Tage zur�ck, 14 nach vorn",
+    "chart_legend_aria": "Diagrammlegende",
+    "legend_best_window": "Bestes Fenster",
+    "legend_rain": "Regen",
+    "legend_low": "Tief",
+    "legend_average": "Mittel",
+    "legend_high": "Hoch",
+    "forecast_list_aria": "Vorhersagetag w�hlen",
+    "details_aria": "Details zum gew�hlten Tag",
+    "selected_day": "Gew�hlter Tag",
+    "weather_details": "Wetterdetails",
+    "details_default_note": "Sieh unten, wie die n�chsten Tage im Vergleich aussehen.",
+    "details_default_copy": "W�hle einen Tag, um zu sehen, wie vielversprechend er ist und was den Ausblick bestimmt.",
+    "compare_title": "{{date}}: nahe Zeitfenster vergleichen",
+    "today_compare_copy": "Pr�fe zuerst heute und vergleiche dann die n�chsten guten Tage.",
+    "timeline_empty": "Die Zeitleiste erscheint hier.",
+    "timeline_loading": "Wetter-Zeitleiste wird erstellt...",
+    "timeline_error": "Wetterdaten konnten nicht geladen werden. Pr�fe Standort und Verbindung.",
+    "details_loading": "Der neueste Ausblick f�r diesen Standort wird geladen.",
+    "details_error": "Der heutige Ausblick ist im Moment nicht verf�gbar.",
+    "forecast_fallback_met": "Die Live-Vorhersage ist derzeit eingeschr�nkt, daher wird eine Ersatzvorhersage angezeigt.",
+    "forecast_fallback_latest": "Die Live-Vorhersage ist derzeit eingeschr�nkt, daher wird die zuletzt verf�gbare Vorhersage angezeigt.",
+    "best_day": "Bester Tag in den n�chsten 14 Tagen.",
+    "best_window": "Bestes Fenster",
+    "best_day_aria": "Bester Tag in den n�chsten 14 Tagen",
+    "weather_context_aria": "Wetterkontext",
+    "avg_temp_suffix": "�",
+    "seasonal_context": "{{season}} saisonaler Kontext",
+    "window_page": "Seite {{current}} / {{total}}"
+  },
+  "signals": {
+    "unknown_label": "Unbekanntes Signal",
+    "unknown_short": "Unbekannt",
+    "exceptional_label": "Au�ergew�hnliches Signal",
+    "exceptional_short": "Au�ergew�hnlich",
+    "strong_label": "Starkes Signal",
+    "strong_short": "Stark",
+    "moderate_label": "Mittleres Signal",
+    "moderate_short": "Mittel",
+    "limited_label": "Begrenztes Signal",
+    "limited_short": "Begrenzt",
+    "low_label": "Schwaches Signal",
+    "low_short": "Schwach"
+  },
+  "verdict": {
+    "signal-exceptional": "Au�ergew�hnlich guter Tag, um gute Pilze zu finden",
+    "signal-strong": "Gute Chance, gute Pilze zu finden",
+    "signal-moderate": "Ordentliche Chance, Pilze zu finden",
+    "signal-limited": "Funde sind m�glich, aber wohl begrenzt",
+    "signal-low": "D�nne Bedingungen mit geringeren Chancen auf lohnende Funde"
+  },
+  "moisture": {
+    "strong": "Stark",
+    "moderate": "Mittel",
+    "low": "Gering"
+  },
+  "persistence": {
+    "fresh": "Frisches Fenster",
+    "aging": "Abklingendes Fenster",
+    "declining": "R�ckl�ufiges Fenster"
+  },
+  "metrics": {
+    "overall_signal": "Gesamtsignal",
+    "overall_signal_helper": "Eine einfache Einsch�tzung, wie lohnend heute wirkt.",
+    "overall_signal_quick_helper": "Ein schneller Eindruck, wie vielversprechend der Tag wirkt.",
+    "moisture_support": "Feuchtigkeitsunterst�tzung",
+    "moisture_support_helper": "Wie hilfreich die j�ngste Feuchtigkeit war.",
+    "forage_score": "Fund-Score",
+    "forage_score_helper": "Hilfreich, um Tage miteinander zu vergleichen.",
+    "window_strength": "Fensterst�rke",
+    "window_strength_helper": "Ob das Muster frisch, stabil oder abklingend wirkt.",
+    "window_strength_detail_helper": "Ob das aktuelle Muster frisch, abklingend oder bereits am Nachlassen ist.",
+    "recent_temperatures": "J�ngste Temperaturen",
+    "recent_temperatures_helper": "Tiefst-, Mittel- und H�chsttemperatur der letzten drei Tage.",
+    "peak_humidity": "Max. Luftfeuchte",
+    "peak_humidity_helper": "Die h�chste Luftfeuchtigkeit der letzten drei Tage.",
+    "search_radius": "Suchradius",
+    "recent_reports": "Aktuelle Meldungen",
+    "research_grade_14d": "Research-Grade (14 T.)",
+    "unique_species": "Einzigartige Arten"
+  },
+  "notes": {
+    "best_modest": "Das beste nahe Fenster wirkt insgesamt noch recht bescheiden.",
+    "best_strongest": "Das sieht nach dem st�rksten kommenden Tag aus.",
+    "recent_favor": "Die j�ngsten Bedingungen arbeiten noch zu deinen Gunsten.",
+    "worth_checking": "Einen Blick wert, auch wenn das Fenster schon nachlassen k�nnte.",
+    "steady_limited": "Ein stabiler Ausblick, auch wenn die Chancen begrenzt bleiben.",
+    "compare_week": "Nutze den Ausblick unten, um nahe Tage zu vergleichen."
+  },
+  "reasons": {
+    "timing_favorable": "Das Timing sieht g�nstig aus, um jetzt erntereife Pilze zu finden.",
+    "timing_decent": "Das Timing ist ordentlich, aber wahrscheinlich au�erhalb des besten Erntefensters.",
+    "timing_early_late": "Das Timing ist wahrscheinlich zu fr�h oder zu sp�t f�r das beste Erntefenster.",
+    "moisture_strong": "Die j�ngste Feuchtigkeit unterst�tzt Pilze im Wald deutlich.",
+    "moisture_moderate": "Die j�ngste Feuchtigkeit hilft sp�rbar, aber nur moderat.",
+    "moisture_none": "Kein nennenswerter j�ngster Regen unterst�tzt Pilze im Wald.",
+    "moisture_little": "Die j�ngste Feuchtigkeit hat etwas geholfen, aber nicht viel.",
+    "humidity_persist": "Feuchte Luft hilft dabei, Feuchtigkeit nach dem Regen zu halten.",
+    "rot_pressure": "Warme, nasse Bedingungen k�nnen F�ulnis oder Insektenbefall f�rdern.",
+    "aging_heat": "Hitze und Austrocknung lassen Pilze schnell altern.",
+    "drying_reducing": "Trockene Bedingungen verringern Qualit�t und Haltbarkeit der Pilze.",
+    "sustained_heat": "Anhaltende Hitze senkt die Chancen auf Pilze in gutem Zustand.",
+    "recent_frost": "J�ngster Frost macht einen guten Pilztag deutlich unwahrscheinlicher.",
+    "cold_nights": "Kalte N�chte verringern das kurzfristige Vertrauen in gute Funde."
+  },
+  "regional": {
+    "section_aria": "Nahe Pilzaktivit�t",
+    "heading": "J�ngste Pilzaktivit�t",
+    "tiles_aria": "J�ngste nahe Beobachtungen mit Research-Grade",
+    "copy": "J�ngste Pilzmeldungen innerhalb von {{radius}} km liefern zus�tzliche lokale Hinweise zu deinem Gebiet.",
+    "no_observations": "Keine aktuellen Beobachtungen mit Research-Grade vorhanden.",
+    "unknown_mushroom": "Unbekannter Pilz",
+    "date_unknown": "Unbekanntes Datum",
+    "research_grade": "Research Grade",
+    "needs_id": "Ben�tigt Bestimmung",
+    "no_photo": "Kein Foto",
+    "view_inat": "Auf iNaturalist ansehen",
+    "wikipedia": "Wikipedia",
+    "previous": "Zur�ck",
+    "next": "Weiter"
+  },
+  "feedback": {
+    "section_aria": "Tournotizen",
+    "eyebrow": "Tournotizen",
+    "title": "Einfaches Feldprotokoll f�hren",
+    "copy": "Speichere nach jeder Tour eine kurze Notiz, um Vorhersagen mit echten Funden zu vergleichen.",
+    "add_result": "Tourergebnis hinzuf�gen",
+    "copy_error": "Fehlertext kopieren",
+    "export": "Feedback-Protokoll kopieren",
+    "clear": "Protokoll l�schen",
+    "modal_title": "Hast du heute Pilze gefunden?",
+    "modal_close_aria": "Feedback-Formular schlie�en",
+    "trip_duration": "Dauer der Tour",
+    "submit": "Feedback senden",
+    "select_result": "W�hle ein Tourergebnis, bevor du das Feedback absendest.",
+    "sync": {
+      "local_only": "Nur lokal",
+      "issue": "Sync-Problem",
+      "pending": "Sync ausstehend",
+      "synced": "Synchronisiert"
+    },
+    "status": {
+      "upload_failed_retry": "Hochladen fehlgeschlagen. Wir versuchen es automatisch erneut.",
+      "no_checkin_local": "F�r diesen Tag gibt es noch keinen Eintrag. Gesamte Eintr�ge: {{count}}. Es wird nur lokal gespeichert.",
+      "no_checkin": "F�r diesen Tag gibt es noch keinen Eintrag. Gesamte Eintr�ge: {{count}}.",
+      "saved_retry": "F�r diesen Tag und Ort gespeichert: {{response}}{{duration}}{{alignment}} ({{when}}). Das Hochladen ist vorerst fehlgeschlagen und wird automatisch erneut versucht.",
+      "saved": "F�r diesen Tag und Ort gespeichert: {{response}}{{duration}}{{alignment}} ({{when}}). Gesamte Eintr�ge: {{count}}{{delta}}.",
+      "sync_error_copied": "Sync-Fehlertext kopiert.",
+      "sync_error_copy_failed": "Sync-Fehlertext konnte nicht kopiert werden.",
+      "copied_log": "{{count}} Feedback-Eintr�ge in die Zwischenablage kopiert.",
+      "copy_log_failed": "Feedback-Protokoll konnte nicht kopiert werden. Zwischenablage-Berechtigung ist m�glicherweise blockiert.",
+      "cleared": "Feedback-Protokoll gel�scht."
+    },
+    "options": {
+      "none": "Gar nicht",
+      "one_two": "Ein oder zwei",
+      "several": "Mehrere",
+      "many": "Eine Menge!"
+    },
+    "duration": {
+      "short": "Weniger als 30 Min.",
+      "medium": "Unter zwei Stunden (30-120 Min.)",
+      "long": "L�nger als 2 Std."
+    },
+    "alignment": {
+      "matched": "Entsprach der Erwartung",
+      "better": "Besser als erwartet",
+      "lower": "Schlechter als erwartet"
+    },
+    "label": {
+      "duration": " | Dauer: {{value}}",
+      "alignment": " | Einordnung: {{value}}",
+      "delta": " | Score vs. Feedback-Kurve: {{value}}"
+    }
+  },
+  "modals": {
+    "observation": "Beobachtung",
+    "observation_aria": "Beobachtungsfenster schlie�en",
+    "observation_preview": "Vorschau der Beobachtung"
+  },
+  "units": {
+    "celsius": "C",
+    "mm": "mm",
+    "percent": "%"
+  },
+  "rain": {
+    "descriptor": "Leicht <= {{light}} mm | Mittel <= {{medium}} mm | Stark <= {{heavy}} mm | Extrem > {{heavy}} mm",
+    "descriptor_mobile": "L<={{light}} M<={{medium}} H<={{heavy}} X>{{heavy}} mm"
+  },
+  "season": {
+    "winter": "Winter",
+    "spring": "Fr?hling",
+    "summer": "Sommer",
+    "autumn": "Herbst"
+  }
+}

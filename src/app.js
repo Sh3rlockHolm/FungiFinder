@@ -1,6 +1,20 @@
 import { MODEL_METADATA, SCORING_CONFIG, applyBiologicalPersistence, buildModelFeatures, inferFruitingSignal, scoreToVerdict } from "./model.js";
+import {
+  applyTranslations,
+  formatDate,
+  formatDateToParts,
+  formatNumber,
+  getLocale,
+  initI18n,
+  onLocaleChange,
+  setLocale,
+  t,
+} from "./i18n.js";
+
+await initI18n();
 
 const state = {
+  activeObservation: null,
   allDays: [],
   animationFromIndex: null,
   expandedMap: null,
@@ -20,6 +34,7 @@ const state = {
   regionalRenderedPage: 1,
   regionalTilePages: new Map(),
   selectedSuggestion: null,
+  statusMessage: "Ready",
   suggestionRequestId: 0,
   suggestionTimer: null,
   suggestions: [],
@@ -39,22 +54,23 @@ const state = {
 const FEEDBACK_STORAGE_KEY = "fungifinder_feedback_log_v1";
 const FEEDBACK_PENDING_STORAGE_KEY = "fungifinder_feedback_pending_v1";
 const FEEDBACK_SCHEMA_VERSION = 1;
-const FEEDBACK_OPTIONS = ["Not at all", "One or Two", "Several", "A ton!"];
-const FAVORABLE_FEEDBACK_OPTIONS = new Set(["Several", "A ton!"]);
+const FEEDBACK_OPTIONS = ["none", "one_two", "several", "many"];
+const LEGACY_FEEDBACK_RESPONSE_MAP = {
+  "Not at all": "none",
+  "One or Two": "one_two",
+  Several: "several",
+  "A ton!": "many",
+};
+const FAVORABLE_FEEDBACK_OPTIONS = new Set(["several", "many"]);
 const TRIP_DURATION_OPTIONS = new Set(["short", "medium", "long"]);
 const REMOTE_FEEDBACK_ENDPOINT = window.FUNGI_FEEDBACK_ENDPOINT || "";
 const REMOTE_FEEDBACK_API_KEY = window.FUNGI_FEEDBACK_API_KEY || "";
 const REMOTE_FEEDBACK_API_KEY_HEADER = window.FUNGI_FEEDBACK_API_KEY_HEADER || "x-api-key";
 const FEEDBACK_SCORE_CURVE = {
-  "Not at all": { min: 0, max: 39, midpoint: 20 },
-  "One or Two": { min: 40, max: 59, midpoint: 50 },
-  Several: { min: 60, max: 79, midpoint: 70 },
-  "A ton!": { min: 80, max: 100, midpoint: 90 },
-};
-const FEEDBACK_DURATION_LABELS = {
-  short: "Less than 30 mins",
-  medium: "Under two hours (30-120 mins)",
-  long: "Longer than 2 hrs",
+  none: { min: 0, max: 39, midpoint: 20 },
+  one_two: { min: 40, max: 59, midpoint: 50 },
+  several: { min: 60, max: 79, midpoint: 70 },
+  many: { min: 80, max: 100, midpoint: 90 },
 };
 const FEEDBACK_ENV_WEIGHTS_5D = [0.15, 0.25, 0.3, 0.2, 0.1];
 const FEEDBACK_EXPECTATION_MATCH_DELTA_MAX = 15;
@@ -139,6 +155,7 @@ const elements = {
   feedbackSyncBadge: document.querySelector("#feedbackSyncBadge"),
   copyFeedbackErrorButton: document.querySelector("#copyFeedbackErrorButton"),
 };
+const localeButtons = Array.from(document.querySelectorAll("[data-locale-option]"));
 
 function loadPreferredInaturalistRadiusKm() {
   try {
@@ -303,7 +320,7 @@ function renderFeedbackUI() {
   const draftResponse = state.feedbackDraftResponse;
   elements.feedbackOptions.querySelectorAll("[data-feedback-value]").forEach((button) => {
     const value = button.dataset.feedbackValue ?? "";
-    const selected = draftResponse ? draftResponse === value : current?.response === value;
+    const selected = draftResponse ? draftResponse === value : normalizeFeedbackResponse(current?.response) === value;
     button.classList.toggle("is-selected", selected);
     button.setAttribute("aria-pressed", selected ? "true" : "false");
   });
@@ -317,15 +334,15 @@ function renderFeedbackUI() {
   if (elements.feedbackSyncBadge) {
     elements.feedbackSyncBadge.classList.remove("is-success", "is-pending", "is-error");
     if (!hasRemote) {
-      elements.feedbackSyncBadge.textContent = "Local only";
+      elements.feedbackSyncBadge.textContent = t("feedback.sync.local_only");
     } else if (hasFailure) {
-      elements.feedbackSyncBadge.textContent = "Sync issue";
+      elements.feedbackSyncBadge.textContent = t("feedback.sync.issue");
       elements.feedbackSyncBadge.classList.add("is-error");
     } else if (pendingCount > 0 || state.feedbackSync.inFlight) {
-      elements.feedbackSyncBadge.textContent = "Sync pending";
+      elements.feedbackSyncBadge.textContent = t("feedback.sync.pending");
       elements.feedbackSyncBadge.classList.add("is-pending");
     } else {
-      elements.feedbackSyncBadge.textContent = "Synced";
+      elements.feedbackSyncBadge.textContent = t("feedback.sync.synced");
       elements.feedbackSyncBadge.classList.add("is-success");
     }
   }
@@ -334,26 +351,40 @@ function renderFeedbackUI() {
   }
   if (!current) {
     if (hasFailure) {
-      elements.feedbackStatus.textContent = "Upload failed. We will retry automatically when possible.";
+      elements.feedbackStatus.textContent = t("feedback.status.upload_failed_retry");
     } else if (!hasRemote) {
-      elements.feedbackStatus.textContent = `No check-in logged for this day yet. Total check-ins: ${state.feedbackLog.length}. Local-only logging is active.`;
+      elements.feedbackStatus.textContent = t("feedback.status.no_checkin_local", { count: formatNumber(state.feedbackLog.length) });
     } else {
-      elements.feedbackStatus.textContent = `No check-in logged for this day yet. Total check-ins: ${state.feedbackLog.length}.`;
+      elements.feedbackStatus.textContent = t("feedback.status.no_checkin", { count: formatNumber(state.feedbackLog.length) });
     }
     return;
   }
-  const when = current.logged_at_utc ? new Date(current.logged_at_utc).toLocaleString() : "Unknown time";
-  const durationText = current.trip_duration_label ? ` | Duration: ${current.trip_duration_label}` : "";
-  const alignmentText = current.prediction_alignment_label ? ` | Alignment: ${current.prediction_alignment_label}` : "";
+  const responseLabel = feedbackResponseLabel(current.response);
+  const when = current.logged_at_utc ? formatDate(new Date(current.logged_at_utc), { dateStyle: "medium", timeStyle: "short" }) : t("regional.date_unknown");
+  const durationText = current.trip_duration_bucket ? t("feedback.label.duration", { value: tripDurationLabel(current.trip_duration_bucket) }) : "";
+  const alignmentText = current.prediction_alignment_key || current.prediction_alignment_label
+    ? t("feedback.label.alignment", { value: feedbackAlignmentLabel(current.prediction_alignment_key || current.prediction_alignment_label) })
+    : "";
   const deltaText = Number.isFinite(current.score_delta_from_feedback_curve)
-    ? ` | Score vs feedback curve: ${current.score_delta_from_feedback_curve >= 0 ? "+" : ""}${current.score_delta_from_feedback_curve}`
+    ? t("feedback.label.delta", { value: `${current.score_delta_from_feedback_curve >= 0 ? "+" : ""}${formatNumber(current.score_delta_from_feedback_curve)}` })
     : "";
   if (hasFailure) {
-    elements.feedbackStatus.textContent =
-      `Saved for this day and location: ${current.response}${durationText}${alignmentText} (${when}). Upload failed for now and will retry automatically.`;
+    elements.feedbackStatus.textContent = t("feedback.status.saved_retry", {
+      response: responseLabel,
+      duration: durationText,
+      alignment: alignmentText,
+      when,
+    });
     return;
   }
-  elements.feedbackStatus.textContent = `Saved for this day and location: ${current.response}${durationText}${alignmentText} (${when}). Total check-ins: ${state.feedbackLog.length}.${deltaText}`;
+  elements.feedbackStatus.textContent = t("feedback.status.saved", {
+    response: responseLabel,
+    duration: durationText,
+    alignment: alignmentText,
+    when,
+    count: formatNumber(state.feedbackLog.length),
+    delta: deltaText,
+  });
 }
 
 function buildFeedbackSyncErrorText() {
@@ -368,39 +399,40 @@ async function copyFeedbackSyncError() {
   const text = buildFeedbackSyncErrorText();
   try {
     await navigator.clipboard.writeText(text);
-    if (elements.feedbackStatus) elements.feedbackStatus.textContent = "Sync error text copied.";
+    if (elements.feedbackStatus) elements.feedbackStatus.textContent = t("feedback.status.sync_error_copied");
   } catch {
-    if (elements.feedbackStatus) elements.feedbackStatus.textContent = "Could not copy sync error text.";
+    if (elements.feedbackStatus) elements.feedbackStatus.textContent = t("feedback.status.sync_error_copy_failed");
   }
 }
 
 function logFeedback(response) {
-  if (!FEEDBACK_OPTIONS.includes(response)) return;
+  const normalizedResponse = normalizeFeedbackResponse(response);
+  if (!normalizedResponse || !FEEDBACK_OPTIONS.includes(normalizedResponse)) return;
   const day = getSelectedDay();
   if (!day || !state.selected) return;
   const tripDuration = TRIP_DURATION_OPTIONS.has(elements.tripDurationSelect?.value ?? "") ? elements.tripDurationSelect.value : "medium";
-  const tripDurationLabel = FEEDBACK_DURATION_LABELS[tripDuration] ?? FEEDBACK_DURATION_LABELS.medium;
-  const curve = FEEDBACK_SCORE_CURVE[response] ?? { min: 0, max: 100, midpoint: 50 };
+  const curve = FEEDBACK_SCORE_CURVE[normalizedResponse] ?? { min: 0, max: 100, midpoint: 50 };
   const scoreDeltaFromFeedbackCurve = Math.round(day.score - curve.midpoint);
-  const alignmentLabel =
+  const alignmentKey =
     Math.abs(scoreDeltaFromFeedbackCurve) <= FEEDBACK_EXPECTATION_MATCH_DELTA_MAX
-      ? "Matched expectation"
+      ? "matched"
       : scoreDeltaFromFeedbackCurve > 0
-        ? "Better than expected"
-        : "Lower than expected";
+        ? "better"
+        : "lower";
   const observedDateLocal = day.date;
   const loggedAtUtc = new Date().toISOString();
   const entry = {
     schema_version: FEEDBACK_SCHEMA_VERSION,
     event_id: generateEventId(),
-    response,
+    response: normalizedResponse,
     expected_score_min: curve.min,
     expected_score_max: curve.max,
     expected_score_midpoint: curve.midpoint,
     score_delta_from_feedback_curve: scoreDeltaFromFeedbackCurve,
-    prediction_alignment_label: alignmentLabel,
-    prediction_alignment_matched: alignmentLabel === "Matched expectation",
-    trip_duration_label: tripDurationLabel,
+    prediction_alignment_key: alignmentKey,
+    prediction_alignment_label: feedbackAlignmentLabel(alignmentKey),
+    prediction_alignment_matched: alignmentKey === "matched",
+    trip_duration_label: tripDurationLabel(tripDuration),
     trip_duration_bucket: tripDuration,
     observed_date_local: observedDateLocal,
     logged_at_utc: loggedAtUtc,
@@ -439,10 +471,10 @@ async function copyFeedbackLogToClipboard() {
   };
   try {
     await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
-    if (elements.feedbackStatus) elements.feedbackStatus.textContent = `Copied ${entries.length} feedback entries to clipboard.`;
+    if (elements.feedbackStatus) elements.feedbackStatus.textContent = t("feedback.status.copied_log", { count: formatNumber(entries.length) });
   } catch (error) {
     console.error("Clipboard copy failed", error);
-    if (elements.feedbackStatus) elements.feedbackStatus.textContent = "Could not copy feedback log. Clipboard permission may be blocked.";
+    if (elements.feedbackStatus) elements.feedbackStatus.textContent = t("feedback.status.copy_log_failed");
   }
 }
 
@@ -451,13 +483,13 @@ function clearFeedbackLog() {
   saveFeedbackLog();
   savePendingFeedbackQueue([]);
   renderFeedbackUI();
-  if (elements.feedbackStatus) elements.feedbackStatus.textContent = "Feedback log cleared.";
+  if (elements.feedbackStatus) elements.feedbackStatus.textContent = t("feedback.status.cleared");
 }
 
 function openFeedbackModal() {
   if (!elements.feedbackModal) return;
   const current = selectedFeedbackEntry();
-  state.feedbackDraftResponse = current?.response && FEEDBACK_OPTIONS.includes(current.response) ? current.response : null;
+  state.feedbackDraftResponse = normalizeFeedbackResponse(current?.response);
   renderFeedbackUI();
   elements.feedbackModal.hidden = false;
   requestAnimationFrame(() => {
@@ -474,14 +506,33 @@ function closeFeedbackModal() {
   }, 220);
 }
 
-const dayFormatter = new Intl.DateTimeFormat(undefined, {
-  day: "numeric",
-  month: "short",
-  weekday: "short",
-});
-const weekdayFormatter = new Intl.DateTimeFormat(undefined, { weekday: "short" });
-const monthDayFormatter = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
-const shortDatePartsFormatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "2-digit" });
+function normalizeFeedbackResponse(value) {
+  if (!value) return null;
+  if (FEEDBACK_OPTIONS.includes(value)) return value;
+  return LEGACY_FEEDBACK_RESPONSE_MAP[value] ?? null;
+}
+
+function feedbackResponseLabel(value) {
+  const normalized = normalizeFeedbackResponse(value);
+  return normalized ? t(`feedback.options.${normalized}`) : String(value || "");
+}
+
+function tripDurationLabel(bucket) {
+  return bucket ? t(`feedback.duration.${bucket}`) : "";
+}
+
+function feedbackAlignmentKey(value) {
+  if (value === "Matched expectation") return "matched";
+  if (value === "Better than expected") return "better";
+  if (value === "Lower than expected") return "lower";
+  return value || null;
+}
+
+function feedbackAlignmentLabel(value) {
+  const normalized = feedbackAlignmentKey(value);
+  return normalized ? t(`feedback.alignment.${normalized}`) : String(value || "");
+}
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -575,7 +626,7 @@ async function geocodeLocation(name) {
 async function searchLocations(name, count = 6) {
   const params = new URLSearchParams({
     count: String(count),
-    language: "en",
+    language: getLocale(),
     name,
   });
   const response = await fetch(`https://geocoding-api.open-meteo.com/v1/search?${params}`);
@@ -599,18 +650,8 @@ function rangeScore(value, bestLow, bestHigh, hardLow, hardHigh) {
 }
 
 function setStatus(message) {
-  const labels = {
-    Ready: "Ready",
-    Loading: "Updating",
-    Updated: "Updated",
-    Limited: "Backup forecast",
-    Error: "Unavailable",
-    "Not found": "Not found",
-    Locating: "Locating",
-    Denied: "Location denied",
-    "No GPS": "No location",
-  };
-  elements.dataStatus.textContent = labels[message] ?? message;
+  state.statusMessage = message;
+  elements.dataStatus.textContent = t(`status.${message}`) || message;
 }
 
 function updateGoogleMapsLink(latitude, longitude) {
@@ -620,20 +661,20 @@ function updateGoogleMapsLink(latitude, longitude) {
 }
 
 function formatTimelineLabel(dateString) {
-  return dayFormatter.format(new Date(`${dateString}T12:00:00`));
+  return formatDate(`${dateString}T12:00:00`, { day: "numeric", month: "short", weekday: "short" });
 }
 
 function formatTimelineLabelParts(dateString) {
-  const date = new Date(`${dateString}T12:00:00`);
+  const date = `${dateString}T12:00:00`;
   return {
-    weekday: weekdayFormatter.format(date),
-    monthDay: monthDayFormatter.format(date),
+    weekday: formatDate(date, { weekday: "short" }),
+    monthDay: formatDate(date, { month: "short", day: "numeric" }),
   };
 }
 
 function formatShortDate(dateString) {
-  const date = new Date(`${dateString}T12:00:00`);
-  const parts = shortDatePartsFormatter.formatToParts(date);
+  const date = `${dateString}T12:00:00`;
+  const parts = formatDateToParts(date, { month: "short", day: "numeric", year: "2-digit" });
   const month = parts.find((part) => part.type === "month")?.value;
   const day = parts.find((part) => part.type === "day")?.value;
   const year = parts.find((part) => part.type === "year")?.value;
@@ -648,7 +689,7 @@ function buildRainIntensityBands() {
     lightMax,
     mediumMax,
     heavyMax,
-    descriptor: `Light <= ${toMm(lightMax)} | Medium <= ${toMm(mediumMax)} | Heavy <= ${toMm(heavyMax)} | Extreme > ${toMm(heavyMax)}`,
+    descriptor: t("rain.descriptor", { light: lightMax.toFixed(0), medium: mediumMax.toFixed(0), heavy: heavyMax.toFixed(0) }),
   };
 }
 
@@ -727,13 +768,13 @@ function getBestForecastDate(scoredDays) {
 
 function signalBandFromScore(score) {
   if (!Number.isFinite(score)) {
-    return { label: "Unknown signal", shortLabel: "Unknown", className: "signal-unknown" };
+    return { label: t("signals.unknown_label"), shortLabel: t("signals.unknown_short"), className: "signal-unknown" };
   }
-  if (score >= 90) return { label: "Exceptional signal", shortLabel: "Exceptional", className: "signal-exceptional" };
-  if (score >= 75) return { label: "Strong signal", shortLabel: "Strong", className: "signal-strong" };
-  if (score >= 60) return { label: "Moderate signal", shortLabel: "Moderate", className: "signal-moderate" };
-  if (score >= 40) return { label: "Limited signal", shortLabel: "Limited", className: "signal-limited" };
-  return { label: "Low signal", shortLabel: "Low", className: "signal-low" };
+  if (score >= 90) return { label: t("signals.exceptional_label"), shortLabel: t("signals.exceptional_short"), className: "signal-exceptional" };
+  if (score >= 75) return { label: t("signals.strong_label"), shortLabel: t("signals.strong_short"), className: "signal-strong" };
+  if (score >= 60) return { label: t("signals.moderate_label"), shortLabel: t("signals.moderate_short"), className: "signal-moderate" };
+  if (score >= 40) return { label: t("signals.limited_label"), shortLabel: t("signals.limited_short"), className: "signal-limited" };
+  return { label: t("signals.low_label"), shortLabel: t("signals.low_short"), className: "signal-low" };
 }
 
 function signalBandClass(score) {
@@ -744,18 +785,38 @@ function formatScore(score) {
   return Number.isFinite(score) ? `${Math.round(score)}/100` : "--";
 }
 
+function formatMetricNumber(value, options = {}) {
+  if (!Number.isFinite(value)) return "--";
+  return formatNumber(value, options);
+}
+
+function formatTemperatureTriplet(min, avg, max, maximumFractionDigits = 1) {
+  return [
+    formatMetricNumber(min, { minimumFractionDigits: maximumFractionDigits, maximumFractionDigits }),
+    formatMetricNumber(avg, { minimumFractionDigits: maximumFractionDigits, maximumFractionDigits }),
+    formatMetricNumber(max, { minimumFractionDigits: maximumFractionDigits, maximumFractionDigits }),
+  ].join(" / ") + `°${t("units.celsius")}`;
+}
+
+function formatConfidenceLabel(confidence) {
+  if (!confidence) return "";
+  const key = `status.${confidence}`;
+  const translated = t(key);
+  return translated === key ? confidence : translated;
+}
+
 function moistureSignalLabel(moistureResponse) {
   if (!Number.isFinite(moistureResponse)) return "--";
-  if (moistureResponse >= 0.62) return "Strong";
-  if (moistureResponse >= 0.4) return "Moderate";
-  return "Low";
+  if (moistureResponse >= 0.62) return t("moisture.strong");
+  if (moistureResponse >= 0.4) return t("moisture.moderate");
+  return t("moisture.low");
 }
 
 function persistenceLabel({ dryDays, crashPhase }) {
   if (!Number.isFinite(dryDays)) return "--";
-  if (crashPhase === "hold" && dryDays <= 2) return "Fresh window";
-  if (crashPhase === "taper" || dryDays <= 5) return "Aging window";
-  return "Declining window";
+  if (crashPhase === "hold" && dryDays <= 2) return t("persistence.fresh");
+  if (crashPhase === "taper" || dryDays <= 5) return t("persistence.aging");
+  return t("persistence.declining");
 }
 
 function metricPillMarkup({ label, value, helper = "", className = "" }) {
@@ -771,19 +832,28 @@ function metricPillMarkup({ label, value, helper = "", className = "" }) {
 
 function outlookStatusNote({ isBestDay, persistence, confidence, signalClass }) {
   if (isBestDay && (signalClass === "signal-low" || signalClass === "signal-limited")) {
-    return "The best nearby window still looks fairly modest.";
+    return t("notes.best_modest");
   }
-  if (isBestDay) return "This looks like the strongest day coming up.";
-  if (persistence === "Fresh window") return "Recent conditions are still working in your favor.";
-  if (persistence === "Aging window") return "Worth checking, though the window may be fading.";
-  if (confidence === "High") return "A steady outlook, even if chances stay limited.";
-  return "Use the week ahead below to compare nearby days.";
+  if (isBestDay) return t("notes.best_strongest");
+  if (persistence === t("persistence.fresh")) return t("notes.recent_favor");
+  if (persistence === t("persistence.aging")) return t("notes.worth_checking");
+  if (confidence === "High") return t("notes.steady_limited");
+  return t("notes.compare_week");
+}
+
+function buildVerdictFromScore(score) {
+  const signal = signalBandFromScore(score);
+  return t(`verdict.${signal.className}`);
+}
+
+function seasonLabel(season) {
+  return season ? t(`season.${season}`) : "";
 }
 
 function buildOutlookNarrative({ isBestDay, verdict, reasons }) {
-  const lead = isBestDay ? "Best day in the next 14 days." : "";
+  const lead = isBestDay ? t("forecast.best_day") : "";
   const verdictSentence = verdict && /[.!?]$/.test(verdict) ? verdict : verdict ? `${verdict}.` : "";
-  const supportingSentence = (reasons ?? []).slice(0, 2).join(" ");
+  const supportingSentence = (reasons ?? []).slice(0, 2).map((reason) => t(reason)).join(" ");
   return [lead, verdictSentence, supportingSentence].filter(Boolean).join(" ");
 }
 
@@ -827,25 +897,25 @@ function buildReasons({
   nightlyMin,
 }) {
   const reasons = [];
-  if (harvestWindowComponent >= 0.62) reasons.push("Timing looks favorable for finding harvestable mushrooms now.");
-  else if (harvestWindowComponent >= 0.42) reasons.push("Timing is decent, but likely outside the best harvest window.");
-  else reasons.push("Timing is likely early or late for peak harvestable mushrooms.");
+  if (harvestWindowComponent >= 0.62) reasons.push("reasons.timing_favorable");
+  else if (harvestWindowComponent >= 0.42) reasons.push("reasons.timing_decent");
+  else reasons.push("reasons.timing_early_late");
 
-  if (rain5dResponse >= 0.62) reasons.push("Recent moisture strongly supports mushrooms in the woods.");
-  else if (rain5dResponse >= 0.4) reasons.push("Recent moisture support is moderate and still helpful.");
-  else if (rainEventClass === "none") reasons.push("No recent meaningful rain is supporting woodland mushrooms.");
-  else reasons.push("Recent moisture has helped a little, but not by much.");
+  if (rain5dResponse >= 0.62) reasons.push("reasons.moisture_strong");
+  else if (rain5dResponse >= 0.4) reasons.push("reasons.moisture_moderate");
+  else if (rainEventClass === "none") reasons.push("reasons.moisture_none");
+  else reasons.push("reasons.moisture_little");
   if (Number.isFinite(humidityCarryoverSupport) && humidityCarryoverSupport >= 0.04) {
-    reasons.push("Humid air is helping moisture persist after recent rain.");
+    reasons.push("reasons.humidity_persist");
   }
 
-  if (spoilagePenalty >= 0.35) reasons.push("Warm, wet conditions may increase rot or insect pressure.");
-  else if (stalenessPenalty >= 0.35) reasons.push("Heat and drying can age mushrooms quickly.");
-  else if (dryingPenalty >= 0.12 || crashPhase === "crash") reasons.push("Drying conditions are reducing mushroom quality and persistence.");
+  if (spoilagePenalty >= 0.35) reasons.push("reasons.rot_pressure");
+  else if (stalenessPenalty >= 0.35) reasons.push("reasons.aging_heat");
+  else if (dryingPenalty >= 0.12 || crashPhase === "crash") reasons.push("reasons.drying_reducing");
 
-  if (avgTemp >= 30) reasons.push("Sustained heat reduces odds of finding good-condition mushrooms.");
-  if (nightlyMin < -1) reasons.push("Recent frost makes a good day in the woods much less likely.");
-  else if (nightlyMin < 4) reasons.push("Cold nights reduce near-term foraging confidence.");
+  if (avgTemp >= 30) reasons.push("reasons.sustained_heat");
+  if (nightlyMin < -1) reasons.push("reasons.recent_frost");
+  else if (nightlyMin < 4) reasons.push("reasons.cold_nights");
 
   return reasons.slice(0, 3);
 }
@@ -1351,27 +1421,27 @@ async function fetchRegionalObservationPage(page) {
 }
 
 function buildObservationTilesMarkup(observations) {
-  if (!observations.length) return `<div class="chart-empty">No recent research-grade observations to show.</div>`;
+  if (!observations.length) return `<div class="chart-empty">${t("regional.no_observations")}</div>`;
   return observations
     .map(
       (obs) => `
       <div class="observation-tile" role="button" tabindex="0" data-observation-id="${obs.id}">
         <div class="observation-thumb">
-          ${obs.qualityGrade === "research" ? `<span class="grade-badge">Research Grade</span>` : ""}
+          ${obs.qualityGrade === "research" ? `<span class="grade-badge">${t("regional.research_grade")}</span>` : ""}
           ${
             obs.photo
               ? `<img src="${obs.photo}" alt="${obs.species}">`
-              : `<span>No photo</span>`
+              : `<span>${t("regional.no_photo")}</span>`
           }
         </div>
         <div class="observation-meta">
           <strong>${obs.species}</strong>
           ${obs.scientificName ? `<em>${obs.scientificName}</em>` : ""}
-          <span>${obs.observedOn || "Date unknown"}</span>
+          <span>${obs.observedOn || t("regional.date_unknown")}</span>
         </div>
         <div class="observation-links">
-          <a href="${obs.url}" target="_blank" rel="noopener noreferrer">View on iNaturalist</a>
-          ${obs.wikipediaUrl ? `<a href="${obs.wikipediaUrl}" target="_blank" rel="noopener noreferrer">Wikipedia</a>` : ""}
+          <a href="${obs.url}" target="_blank" rel="noopener noreferrer">${t("regional.view_inat")}</a>
+          ${obs.wikipediaUrl ? `<a href="${obs.wikipediaUrl}" target="_blank" rel="noopener noreferrer">${t("regional.wikipedia")}</a>` : ""}
         </div>
       </div>
     `,
@@ -1391,11 +1461,12 @@ function ensureRegionalPageMarkup(stats, page, pageSize = 8) {
 
 function openObservationModal(observation) {
   if (!observation || !elements.imageModal) return;
+  state.activeObservation = observation;
   if (elements.imageModalPreview) {
     elements.imageModalPreview.src = observation.photo || "";
-    elements.imageModalPreview.alt = observation.species || "Observation preview";
+    elements.imageModalPreview.alt = observation.species || t("modals.observation_preview");
   }
-  if (elements.imageModalTitle) elements.imageModalTitle.textContent = observation.species || "Observation";
+  if (elements.imageModalTitle) elements.imageModalTitle.textContent = observation.species || t("modals.observation");
   const modalPhoto = elements.imageModal.querySelector("[data-modal-photo]");
   const modalSpecies = elements.imageModal.querySelector("[data-modal-species]");
   const modalScientific = elements.imageModal.querySelector("[data-modal-scientific]");
@@ -1404,16 +1475,16 @@ function openObservationModal(observation) {
   const modalLinks = elements.imageModal.querySelector("[data-modal-links]");
   if (modalPhoto) {
     modalPhoto.src = observation.photo || "";
-    modalPhoto.alt = observation.species || "Observation preview";
+    modalPhoto.alt = observation.species || t("modals.observation_preview");
   }
-  if (modalSpecies) modalSpecies.textContent = observation.species || "Unknown mushroom";
+  if (modalSpecies) modalSpecies.textContent = observation.species || t("regional.unknown_mushroom");
   if (modalScientific) modalScientific.textContent = observation.scientificName || "";
-  if (modalObservedOn) modalObservedOn.textContent = observation.observedOn || "Date unknown";
-  if (modalGrade) modalGrade.textContent = observation.qualityGrade === "research" ? "Research Grade" : "Needs ID";
+  if (modalObservedOn) modalObservedOn.textContent = observation.observedOn || t("regional.date_unknown");
+  if (modalGrade) modalGrade.textContent = observation.qualityGrade === "research" ? t("regional.research_grade") : t("regional.needs_id");
   if (modalLinks) {
     modalLinks.innerHTML = `
-      <a href="${observation.url}" target="_blank" rel="noopener noreferrer">View on iNaturalist</a>
-      ${observation.wikipediaUrl ? `<a href="${observation.wikipediaUrl}" target="_blank" rel="noopener noreferrer">Wikipedia</a>` : ""}
+      <a href="${observation.url}" target="_blank" rel="noopener noreferrer">${t("regional.view_inat")}</a>
+      ${observation.wikipediaUrl ? `<a href="${observation.wikipediaUrl}" target="_blank" rel="noopener noreferrer">${t("regional.wikipedia")}</a>` : ""}
     `;
   }
   elements.imageModal.hidden = false;
@@ -1424,6 +1495,7 @@ function openObservationModal(observation) {
 
 function closeObservationModal() {
   if (!elements.imageModal) return;
+  state.activeObservation = null;
   elements.imageModal.classList.remove("is-open");
   window.setTimeout(() => {
     if (!elements.imageModal.classList.contains("is-open")) elements.imageModal.hidden = true;
@@ -1787,7 +1859,7 @@ function buildSmoothPath(points) {
 
 function renderCombinedChart() {
   if (!state.allDays.length) {
-    elements.combinedChart.innerHTML = `<div class="chart-empty">Timeline will appear here.</div>`;
+    elements.combinedChart.innerHTML = `<div class="chart-empty">${t("forecast.timeline_empty")}</div>`;
     return;
   }
 
@@ -1818,7 +1890,11 @@ function renderCombinedChart() {
   const rainTop = computeRainAxisTop(rainMax);
   const rainBands = buildRainIntensityBands();
   const rainDescriptor = mobile
-    ? `L<=${rainBands.lightMax} M<=${rainBands.mediumMax} H<=${rainBands.heavyMax} X>${rainBands.heavyMax} mm`
+    ? t("rain.descriptor_mobile", {
+        light: rainBands.lightMax.toFixed(0),
+        medium: rainBands.mediumMax.toFixed(0),
+        heavy: rainBands.heavyMax.toFixed(0),
+      })
     : rainBands.descriptor;
   const chartDescriptor = rainDescriptor;
   const barWidth = Math.max(14, slotWidth - 10);
@@ -1862,7 +1938,7 @@ function renderCombinedChart() {
   }
   const yTickCount = Math.max(2, tempTickValues.length);
   elements.combinedChart.innerHTML = `
-    <svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Combined weather timeline">
+    <svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${t("forecast.chart_svg_aria")}">
       <defs>
         <clipPath id="${clipId}">
           <rect x="${margin.left}" y="${margin.top}" width="${plotWidth}" height="${plotHeight}"></rect>
@@ -1874,14 +1950,14 @@ function renderCombinedChart() {
         const rainValue = Math.max(0, Math.round((1 - ratio) * rainTop));
         return `
           <line class="grid-line" x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}"></line>
-          <text class="y-label" x="${margin.left - 16}" y="${y + 4}" text-anchor="end">${tempValue} C</text>
-          <text class="y-label" x="${width - margin.right + 16}" y="${y + 4}" text-anchor="start">${rainValue} mm</text>
+          <text class="y-label" x="${margin.left - 16}" y="${y + 4}" text-anchor="end">${formatNumber(tempValue)} ${t("units.celsius")}</text>
+          <text class="y-label" x="${width - margin.right + 16}" y="${y + 4}" text-anchor="start">${formatNumber(rainValue)} ${t("units.mm")}</text>
         `;
       }).join("")}
       ${
         showFreezingLine
           ? `<line class="freezing-line" x1="${margin.left}" y1="${freezingLineY}" x2="${width - margin.right}" y2="${freezingLineY}"></line>
-      <text class="freezing-label" x="${margin.left - 16}" y="${freezingLineY - 6}" text-anchor="end">0 C</text>`
+      <text class="freezing-label" x="${margin.left - 16}" y="${freezingLineY - 6}" text-anchor="end">0 ${t("units.celsius")}</text>`
           : ""
       }
       <line class="signal-lane-divider" x1="${margin.left}" y1="${weatherTop}" x2="${width - margin.right}" y2="${weatherTop}"></line>
@@ -1908,7 +1984,7 @@ function renderCombinedChart() {
                 width="${Math.max(7, slotWidth - 4)}"
                 height="${opportunityRibbonHeight}"
               ></rect>
-              ${isBestDay ? `<text class="opportunity-best-marker" x="${xAt(index)}" y="${opportunityRibbonY - 3}" text-anchor="middle">Best</text>` : ""}
+              ${isBestDay ? `<text class="opportunity-best-marker" x="${xAt(index)}" y="${opportunityRibbonY - 3}" text-anchor="middle">${t("forecast.best_window")}</text>` : ""}
             </g>
           `;
         }).join("")}
@@ -1986,7 +2062,7 @@ function renderDaySelector() {
       const signal = signalBandFromScore(day.score);
       return `
         <button class="day-chip ${signal.className}${isActive ? " is-active" : ""}" type="button" data-day="${day.date}" aria-pressed="${isActive}">
-          <span class="day-chip-date">${parts.weekday}${isBestDay ? ' <span class="day-chip-medal" aria-label="Best day in next 14 days" title="Best day in next 14 days">🥇</span>' : ""}</span>
+          <span class="day-chip-date">${parts.weekday}${isBestDay ? ` <span class="day-chip-medal" aria-label="${t("forecast.best_day_aria")}" title="${t("forecast.best_day_aria")}">🥇</span>` : ""}</span>
           <strong>${signal.shortLabel}</strong>
           <span class="day-chip-score">${parts.monthDay} · ${formatScore(day.score)}</span>
         </button>
@@ -2008,11 +2084,18 @@ function renderMobileForecastList() {
       const signal = signalBandFromScore(day.score);
       const isActive = day.date === state.focusDate;
       const isBestDay = day.date === bestForecastDate;
-      const rain = Number.isFinite(day.expectedRainfall) ? `${day.expectedRainfall.toFixed(day.expectedRainfall >= 10 ? 0 : 1)} mm` : "--";
-      const avgTemp = Number.isFinite(day.meanTemp) ? `${day.meanTemp.toFixed(0)}&deg;C avg` : "--";
+      const rain = Number.isFinite(day.expectedRainfall)
+        ? `${formatNumber(day.expectedRainfall, {
+            minimumFractionDigits: day.expectedRainfall >= 10 ? 0 : 1,
+            maximumFractionDigits: day.expectedRainfall >= 10 ? 0 : 1,
+          })} ${t("units.mm")}`
+        : "--";
+      const avgTemp = Number.isFinite(day.meanTemp)
+        ? `${formatNumber(day.meanTemp, { maximumFractionDigits: 0 })}&deg;${t("units.celsius")} ${t("forecast.avg_temp_suffix")}`
+        : "--";
       const minMax =
         Number.isFinite(day.minTemp) && Number.isFinite(day.maxTemp)
-          ? `${day.minTemp.toFixed(0)}-${day.maxTemp.toFixed(0)}&deg;C`
+          ? `${formatNumber(day.minTemp, { maximumFractionDigits: 0 })}-${formatNumber(day.maxTemp, { maximumFractionDigits: 0 })}&deg;${t("units.celsius")}`
           : "--";
       return `
         <button class="mobile-forecast-day ${signal.className}${isActive ? " is-active" : ""}" type="button" data-mobile-forecast-day="${day.date}" aria-pressed="${isActive}">
@@ -2022,9 +2105,9 @@ function renderMobileForecastList() {
           </span>
           <span class="mobile-forecast-main">
             <span class="mobile-forecast-signal">${signal.label}</span>
-            <span class="mobile-forecast-score">${formatScore(day.score)}${isBestDay ? " · Best window" : ""}</span>
+            <span class="mobile-forecast-score">${formatScore(day.score)}${isBestDay ? ` · ${t("forecast.best_window")}` : ""}</span>
           </span>
-          <span class="mobile-forecast-weather" aria-label="Weather context">
+          <span class="mobile-forecast-weather" aria-label="${t("forecast.weather_context_aria")}">
             <span>${rain}</span>
             <span>${avgTemp}</span>
             <span>${minMax}</span>
@@ -2120,45 +2203,46 @@ function renderSelectedDay() {
   const dryDays = selectedDay?.diagnostics?.dryDaysSinceMeaningfulRain;
   const crashPhase = selectedDay?.diagnostics?.crashPhase ?? null;
   const signal = signalBandFromScore(selectedDay.score);
+  const verdict = buildVerdictFromScore(selectedDay.score);
   const moistureSignal = moistureSignalLabel(moistureResponse);
   const persistence = persistenceLabel({ dryDays, crashPhase });
   const label = formatTimelineLabel(selectedDay.date);
   const isBestDay = selectedDay.date === getBestForecastDate(state.scoredDays);
   const outlookNarrative = buildOutlookNarrative({
     isBestDay,
-    verdict: selectedDay.verdict,
+    verdict,
     reasons: selectedDay.reasons,
   });
 
-  elements.summaryLabel.textContent = "Today";
+  elements.summaryLabel.textContent = t("header.today");
   if (elements.summaryDate) elements.summaryDate.textContent = label;
   elements.todayScore.textContent = formatScore(selectedDay.score);
-  elements.todayVerdict.textContent = selectedDay.verdict;
+  elements.todayVerdict.textContent = verdict;
   if (elements.summaryExplanation) elements.summaryExplanation.textContent = outlookNarrative;
   if (elements.summaryMetrics) {
     elements.summaryMetrics.innerHTML = [
       metricPillMarkup({
-        label: "Overall signal",
+        label: t("metrics.overall_signal"),
         value: signal.shortLabel,
-        helper: "A plain-language read on how worthwhile today looks.",
+        helper: t("metrics.overall_signal_helper"),
         className: signal.className,
       }),
       metricPillMarkup({
-        label: "Moisture support",
+        label: t("metrics.moisture_support"),
         value: moistureSignal,
-        helper: "How helpful recent wet weather has been.",
+        helper: t("metrics.moisture_support_helper"),
       }),
     ].join("");
   }
-  elements.confidenceBadge.textContent = selectedDay.confidence;
-  elements.analysisTitle.textContent = `${label}: compare the nearby window`;
-  elements.analysisCopy.textContent = "Check today first, then compare the next best nearby days.";
-  if (elements.seasonBadge) elements.seasonBadge.textContent = `${selectedDay.season} seasonal context`;
+  elements.confidenceBadge.textContent = formatConfidenceLabel(selectedDay.confidence);
+  elements.analysisTitle.textContent = t("forecast.compare_title", { date: label });
+  elements.analysisCopy.textContent = t("forecast.today_compare_copy");
+  if (elements.seasonBadge) elements.seasonBadge.textContent = t("forecast.seasonal_context", { season: seasonLabel(selectedDay.season) });
 
   elements.detailDateLabel.textContent = label;
   elements.detailScore.textContent = formatScore(selectedDay.score);
-  elements.detailVerdict.textContent = selectedDay.verdict;
-  if (elements.detailConfidenceBadge) elements.detailConfidenceBadge.textContent = selectedDay.confidence;
+  elements.detailVerdict.textContent = verdict;
+  if (elements.detailConfidenceBadge) elements.detailConfidenceBadge.textContent = formatConfidenceLabel(selectedDay.confidence);
   if (elements.detailStatusBadge) {
     elements.detailStatusBadge.textContent = signal.shortLabel;
     elements.detailStatusBadge.className = `detail-status-badge ${signal.className}`;
@@ -2174,38 +2258,38 @@ function renderSelectedDay() {
   elements.detailCopy.textContent = outlookNarrative;
   elements.detailMetrics.innerHTML = [
     metricPillMarkup({
-      label: "Overall signal",
+      label: t("metrics.overall_signal"),
       value: signal.shortLabel,
-      helper: "A quick read on how promising the day looks.",
+      helper: t("metrics.overall_signal_quick_helper"),
       className: signal.className,
     }),
     metricPillMarkup({
-      label: "Forage score",
+      label: t("metrics.forage_score"),
       value: formatScore(selectedDay.score),
-      helper: "Useful for comparing one day with another.",
+      helper: t("metrics.forage_score_helper"),
     }),
     metricPillMarkup({
-      label: "Moisture support",
+      label: t("metrics.moisture_support"),
       value: moistureSignal,
-      helper: "How helpful recent wet weather has been.",
+      helper: t("metrics.moisture_support_helper"),
     }),
   ].join("");
   if (elements.detailAdvancedMetrics) {
     elements.detailAdvancedMetrics.innerHTML = [
       metricPillMarkup({
-        label: "Window strength",
+        label: t("metrics.window_strength"),
         value: persistence,
-        helper: "Whether the current pattern feels fresh, fading, or already slipping.",
+        helper: t("metrics.window_strength_detail_helper"),
       }),
       metricPillMarkup({
-        label: "Recent temperatures",
-        value: `${Number.isFinite(selectedDay.tempMin3d) ? selectedDay.tempMin3d.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.tempAvg3d) ? selectedDay.tempAvg3d.toFixed(1) : "--"} / ${Number.isFinite(selectedDay.tempMax3d) ? selectedDay.tempMax3d.toFixed(1) : "--"}&deg;C`,
-        helper: "Low, average, and high temperatures over the past three days.",
+        label: t("metrics.recent_temperatures"),
+        value: formatTemperatureTriplet(selectedDay.tempMin3d, selectedDay.tempAvg3d, selectedDay.tempMax3d),
+        helper: t("metrics.recent_temperatures_helper"),
       }),
       metricPillMarkup({
-        label: "Peak humidity",
-        value: `${Number.isFinite(selectedDay.humidityMax3d) ? selectedDay.humidityMax3d.toFixed(0) : "--"} %`,
-        helper: "The highest humidity reached in the past three days.",
+        label: t("metrics.peak_humidity"),
+        value: `${formatMetricNumber(selectedDay.humidityMax3d, { maximumFractionDigits: 0 })} ${t("units.percent")}`,
+        helper: t("metrics.peak_humidity_helper"),
       }),
     ].join("");
   }
@@ -2239,15 +2323,15 @@ function renderRegionalStats() {
   const currentPage = Math.min(Math.max(1, state.regionalPage || 1), pageCount);
   renderRegionalTilesWithSlide(stats, currentPage);
   elements.regionalPagination.innerHTML = `
-    <button class="ghost-button" type="button" data-regional-page="${Math.max(1, currentPage - 1)}" ${currentPage <= 1 ? "disabled" : ""}>Previous</button>
-    <span class="chart-unit">Page ${currentPage} / ${pageCount}</span>
-    <button class="ghost-button" type="button" data-regional-page="${Math.min(pageCount, currentPage + 1)}" ${currentPage >= pageCount ? "disabled" : ""}>Next</button>
+    <button class="ghost-button" type="button" data-regional-page="${Math.max(1, currentPage - 1)}" ${currentPage <= 1 ? "disabled" : ""}>${t("regional.previous")}</button>
+    <span class="chart-unit">${t("forecast.window_page", { current: formatNumber(currentPage), total: formatNumber(pageCount) })}</span>
+    <button class="ghost-button" type="button" data-regional-page="${Math.min(pageCount, currentPage + 1)}" ${currentPage >= pageCount ? "disabled" : ""}>${t("regional.next")}</button>
   `;
   elements.regionalMetrics.innerHTML = `
-    <div class="metric-pill"><span>Search radius</span><strong>${state.inatRadiusKm} km</strong></div>
-    <div class="metric-pill"><span>Recent reports</span><strong>${stats.recent14Observations ?? 0}</strong></div>
-    <div class="metric-pill"><span>Research-grade (14d)</span><strong>${stats.researchRecent14Total ?? stats.researchRecent14Observations}</strong></div>
-    <div class="metric-pill"><span>Unique species</span><strong>${(stats.uniqueResearchObservations ?? []).length}</strong></div>
+    <div class="metric-pill"><span>${t("metrics.search_radius")}</span><strong>${formatNumber(state.inatRadiusKm)} km</strong></div>
+    <div class="metric-pill"><span>${t("metrics.recent_reports")}</span><strong>${formatNumber(stats.recent14Observations ?? 0)}</strong></div>
+    <div class="metric-pill"><span>${t("metrics.research_grade_14d")}</span><strong>${formatNumber(stats.researchRecent14Total ?? stats.researchRecent14Observations ?? 0)}</strong></div>
+    <div class="metric-pill"><span>${t("metrics.unique_species")}</span><strong>${formatNumber((stats.uniqueResearchObservations ?? []).length)}</strong></div>
   `;
   updateRegionalScopeCopy();
   renderObservationMapLayer(stats.uniqueResearchObservations ?? []);
@@ -2337,12 +2421,46 @@ async function resolveLocationInput(value) {
 
 function updateRadiusLegend() {
   const label = elements.mapRadiusCopy;
-  if (label) label.textContent = `${state.inatRadiusKm} km around the selected point`;
+  if (label) label.textContent = t("map.radius_selected", { radius: formatNumber(state.inatRadiusKm) });
 }
 
 function updateRegionalScopeCopy() {
   if (!elements.regionalCopy) return;
-  elements.regionalCopy.textContent = `Recent mushroom reports within ${state.inatRadiusKm} km offer extra local perspective around your chosen area.`;
+  elements.regionalCopy.textContent = t("regional.copy", { radius: formatNumber(state.inatRadiusKm) });
+}
+
+function updateLocaleSwitcherUI() {
+  const activeLocale = getLocale();
+  localeButtons.forEach((button) => {
+    const active = button.dataset.localeOption === activeLocale;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
+function refreshLocalizedUI() {
+  updateLocaleSwitcherUI();
+  updateRadiusLegend();
+  updateRegionalScopeCopy();
+  setStatus(state.statusMessage || "Ready");
+  if (!state.scoredDays.length) {
+    elements.summaryLabel.textContent = t("header.today");
+    if (elements.summaryDate) elements.summaryDate.textContent = t("header.default_date");
+    elements.todayVerdict.textContent = t("header.default_outlook");
+    if (elements.summaryExplanation) elements.summaryExplanation.textContent = t("header.default_explanation");
+    if (elements.analysisTitle) elements.analysisTitle.textContent = t("forecast.analysis_title_default");
+    if (elements.analysisCopy) elements.analysisCopy.textContent = t("forecast.analysis_copy_default");
+    if (elements.detailStatusNote) elements.detailStatusNote.textContent = t("forecast.details_default_note");
+    if (elements.detailCopy) elements.detailCopy.textContent = t("forecast.details_default_copy");
+  } else {
+    renderCombinedChart();
+    renderSelectedDay();
+  }
+  renderFeedbackUI();
+  renderRegionalStats();
+  if (state.activeObservation && elements.imageModal && !elements.imageModal.hidden) {
+    openObservationModal(state.activeObservation);
+  }
 }
 
 function ensureExpandedMap() {
@@ -2442,8 +2560,8 @@ async function refreshRegionalObservationContext() {
 async function analyzeLocation(location, shouldMoveMap = true) {
   setSelectedLocation(location.latitude, location.longitude, location.label, shouldMoveMap);
   setStatus("Loading");
-  elements.combinedChart.innerHTML = `<div class="loading">Building the weather timeline...</div>`;
-  elements.detailCopy.textContent = "Loading the latest outlook for this location.";
+  elements.combinedChart.innerHTML = `<div class="loading">${t("forecast.timeline_loading")}</div>`;
+  elements.detailCopy.textContent = t("forecast.details_loading");
   state.regionalStats = null;
   state.regionalPage = 1;
   state.regionalRenderedPage = 1;
@@ -2473,14 +2591,14 @@ async function analyzeLocation(location, shouldMoveMap = true) {
     if (usedWeatherFallback) {
       elements.analysisCopy.textContent =
         payload.forecastFallbackSource === "MET Norway"
-          ? "Live forecast coverage is limited right now, so a backup forecast is being shown instead."
-          : "Live forecast coverage is limited right now, so the latest available forecast is being shown instead.";
+          ? t("forecast.forecast_fallback_met")
+          : t("forecast.forecast_fallback_latest");
     }
   } catch (error) {
     console.error(error);
     setStatus("Error");
-    elements.combinedChart.innerHTML = `<div class="chart-empty">Weather data could not be loaded. Check the location and connection.</div>`;
-    elements.detailCopy.textContent = "Today’s outlook is unavailable right now.";
+    elements.combinedChart.innerHTML = `<div class="chart-empty">${t("forecast.timeline_error")}</div>`;
+    elements.detailCopy.textContent = t("forecast.details_error");
   }
 }
 
@@ -2610,6 +2728,13 @@ elements.feedbackOptions?.addEventListener("click", (event) => {
   state.feedbackDraftResponse = FEEDBACK_OPTIONS.includes(value) ? value : null;
   renderFeedbackUI();
 });
+localeButtons.forEach((button) => {
+  button.addEventListener("click", async () => {
+    const locale = button.dataset.localeOption;
+    if (!locale || locale === getLocale()) return;
+    await setLocale(locale);
+  });
+});
 elements.openFeedbackModalButton?.addEventListener("click", () => {
   openFeedbackModal();
 });
@@ -2618,7 +2743,7 @@ elements.closeFeedbackModalButton?.addEventListener("click", () => {
 });
 elements.submitFeedbackButton?.addEventListener("click", () => {
   if (!state.feedbackDraftResponse) {
-    if (elements.feedbackStatus) elements.feedbackStatus.textContent = "Select a trip result before submitting feedback.";
+    if (elements.feedbackStatus) elements.feedbackStatus.textContent = t("feedback.select_result");
     return;
   }
   const saved = logFeedback(state.feedbackDraftResponse);
@@ -2722,12 +2847,14 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && elements.mapModal && !elements.mapModal.hidden) closeMapModal();
   if (event.key === "Escape" && elements.feedbackModal && !elements.feedbackModal.hidden) closeFeedbackModal();
 });
+onLocaleChange(() => {
+  refreshLocalizedUI();
+});
 
 if (elements.inatRadiusSelect) {
   elements.inatRadiusSelect.value = String(state.inatRadiusKm);
 }
-updateRadiusLegend();
-updateRegionalScopeCopy();
+refreshLocalizedUI();
 
 state.feedbackLog = loadFeedbackLog();
 flushPendingFeedbackQueue().then(() => renderFeedbackUI());

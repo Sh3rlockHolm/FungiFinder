@@ -1,0 +1,271 @@
+{
+  "meta": {
+    "title": "FungiFinder"
+  },
+  "locale": {
+    "label": "Language",
+    "en": "EN",
+    "de": "DE",
+    "ru": "RU"
+  },
+  "app": {
+    "name": "FungiFinder"
+  },
+  "status": {
+    "Ready": "Ready",
+    "Loading": "Updating",
+    "Updated": "Updated",
+    "Limited": "Backup forecast",
+    "Error": "Unavailable",
+    "Not found": "Not found",
+    "Locating": "Locating",
+    "Denied": "Location denied",
+    "No GPS": "No location",
+    "Data limited": "Data limited",
+    "Unavailable": "Unavailable",
+    "High": "High confidence",
+    "Medium": "Medium confidence",
+    "Low": "Lower confidence"
+  },
+  "header": {
+    "controls_aria": "Foraging controls and today's outlook",
+    "controls_section_aria": "Location controls",
+    "quick_actions_aria": "Quick location actions",
+    "search_label": "Search location",
+    "search_placeholder": "Place name or latitude, longitude",
+    "submit": "Go",
+    "submit_aria": "Update outlook",
+    "use_location": "Use location",
+    "sample_location": "Try Black Forest",
+    "search_area": "Search area",
+    "search_area_copy": "Set how wide the search radius should be around your selected point.",
+    "today": "Today",
+    "forage_score": "Forage score",
+    "default_date": "Choose a day",
+    "default_outlook": "Choose a location to begin.",
+    "default_explanation": "Pick a place to see today's outlook and the strongest nearby window."
+  },
+  "map": {
+    "section_aria": "Map preview",
+    "title": "Search area",
+    "open_maps": "Open in Maps",
+    "expand": "Expand map",
+    "map_aria": "Select a map location",
+    "legend_aria": "Search radius",
+    "legend_title": "Mushroom search area",
+    "radius_selected": "{{radius}} km around the selected point",
+    "modal_title": "Search area",
+    "modal_close_aria": "Close expanded map",
+    "expanded_map_aria": "Expanded search area map"
+  },
+  "forecast": {
+    "section_aria": "Seven day outlook",
+    "analysis_aria": "Selected day outlook and evidence",
+    "week_ahead": "Week ahead",
+    "analysis_title_default": "Choose a day to inspect",
+    "analysis_copy_default": "Check today first, then compare the next best nearby days.",
+    "tabs_aria": "Mobile content sections",
+    "tab_overview": "Overview",
+    "tab_details": "Details",
+    "tab_examples": "Nearby reports",
+    "day_selector_aria": "Choose day",
+    "chart_aria": "Combined weather timeline",
+    "chart_svg_aria": "Combined weather timeline",
+    "chart_title": "Next 14 days",
+    "chart_copy": "Use the forecast strip to compare likely windows, then inspect the selected day below.",
+    "chart_range": "7 days back, next 14",
+    "chart_legend_aria": "Chart legend",
+    "legend_best_window": "Best window",
+    "legend_rain": "Rain",
+    "legend_low": "Low",
+    "legend_average": "Average",
+    "legend_high": "High",
+    "forecast_list_aria": "Choose a forecast day",
+    "details_aria": "Selected day details",
+    "selected_day": "Selected day",
+    "weather_details": "Weather details",
+    "details_default_note": "See how the next few days compare below.",
+    "details_default_copy": "Select any day to see how promising it looks and what is shaping the outlook.",
+    "compare_title": "{{date}}: compare the nearby window",
+    "today_compare_copy": "Check today first, then compare the next best nearby days.",
+    "timeline_empty": "Timeline will appear here.",
+    "timeline_loading": "Building the weather timeline...",
+    "timeline_error": "Weather data could not be loaded. Check the location and connection.",
+    "details_loading": "Loading the latest outlook for this location.",
+    "details_error": "Today's outlook is unavailable right now.",
+    "forecast_fallback_met": "Live forecast coverage is limited right now, so a backup forecast is being shown instead.",
+    "forecast_fallback_latest": "Live forecast coverage is limited right now, so the latest available forecast is being shown instead.",
+    "best_day": "Best day in the next 14 days.",
+    "best_window": "Best window",
+    "best_day_aria": "Best day in next 14 days",
+    "weather_context_aria": "Weather context",
+    "avg_temp_suffix": "avg",
+    "seasonal_context": "{{season}} seasonal context",
+    "window_page": "Page {{current}} / {{total}}"
+  },
+  "signals": {
+    "unknown_label": "Unknown signal",
+    "unknown_short": "Unknown",
+    "exceptional_label": "Exceptional signal",
+    "exceptional_short": "Exceptional",
+    "strong_label": "Strong signal",
+    "strong_short": "Strong",
+    "moderate_label": "Moderate signal",
+    "moderate_short": "Moderate",
+    "limited_label": "Limited signal",
+    "limited_short": "Limited",
+    "low_label": "Low signal",
+    "low_short": "Low"
+  },
+  "verdict": {
+    "signal-exceptional": "Exceptional day to find good mushrooms",
+    "signal-strong": "Strong chance of finding good mushrooms",
+    "signal-moderate": "Decent chance of finding mushrooms",
+    "signal-limited": "Possible finds, but likely limited",
+    "signal-low": "Sparse conditions, with lower odds of meaningful finds"
+  },
+  "season": {
+    "winter": "Winter",
+    "spring": "Spring",
+    "summer": "Summer",
+    "autumn": "Autumn"
+  },
+  "moisture": {
+    "strong": "Strong",
+    "moderate": "Moderate",
+    "low": "Low"
+  },
+  "persistence": {
+    "fresh": "Fresh window",
+    "aging": "Aging window",
+    "declining": "Declining window"
+  },
+  "metrics": {
+    "overall_signal": "Overall signal",
+    "overall_signal_helper": "A plain-language read on how worthwhile today looks.",
+    "overall_signal_quick_helper": "A quick read on how promising the day looks.",
+    "moisture_support": "Moisture support",
+    "moisture_support_helper": "How helpful recent wet weather has been.",
+    "forage_score": "Forage score",
+    "forage_score_helper": "Useful for comparing one day with another.",
+    "window_strength": "Window strength",
+    "window_strength_helper": "Whether the pattern feels fresh, steady, or fading.",
+    "window_strength_detail_helper": "Whether the current pattern feels fresh, fading, or already slipping.",
+    "recent_temperatures": "Recent temperatures",
+    "recent_temperatures_helper": "Low, average, and high temperatures over the past three days.",
+    "peak_humidity": "Peak humidity",
+    "peak_humidity_helper": "The highest humidity reached in the past three days.",
+    "search_radius": "Search radius",
+    "recent_reports": "Recent reports",
+    "research_grade_14d": "Research-grade (14d)",
+    "unique_species": "Unique species"
+  },
+  "notes": {
+    "best_modest": "The best nearby window still looks fairly modest.",
+    "best_strongest": "This looks like the strongest day coming up.",
+    "recent_favor": "Recent conditions are still working in your favor.",
+    "worth_checking": "Worth checking, though the window may be fading.",
+    "steady_limited": "A steady outlook, even if chances stay limited.",
+    "compare_week": "Use the week ahead below to compare nearby days."
+  },
+  "reasons": {
+    "timing_favorable": "Timing looks favorable for finding harvestable mushrooms now.",
+    "timing_decent": "Timing is decent, but likely outside the best harvest window.",
+    "timing_early_late": "Timing is likely early or late for peak harvestable mushrooms.",
+    "moisture_strong": "Recent moisture strongly supports mushrooms in the woods.",
+    "moisture_moderate": "Recent moisture support is moderate and still helpful.",
+    "moisture_none": "No recent meaningful rain is supporting woodland mushrooms.",
+    "moisture_little": "Recent moisture has helped a little, but not by much.",
+    "humidity_persist": "Humid air is helping moisture persist after recent rain.",
+    "rot_pressure": "Warm, wet conditions may increase rot or insect pressure.",
+    "aging_heat": "Heat and drying can age mushrooms quickly.",
+    "drying_reducing": "Drying conditions are reducing mushroom quality and persistence.",
+    "sustained_heat": "Sustained heat reduces odds of finding good-condition mushrooms.",
+    "recent_frost": "Recent frost makes a good day in the woods much less likely.",
+    "cold_nights": "Cold nights reduce near-term foraging confidence."
+  },
+  "regional": {
+    "section_aria": "Nearby mushroom activity",
+    "heading": "Recent mushroom activity",
+    "tiles_aria": "Recent nearby research observations",
+    "copy": "Recent mushroom reports within {{radius}} km offer extra local perspective around your chosen area.",
+    "no_observations": "No recent research-grade observations to show.",
+    "unknown_mushroom": "Unknown mushroom",
+    "date_unknown": "Date unknown",
+    "research_grade": "Research Grade",
+    "needs_id": "Needs ID",
+    "no_photo": "No photo",
+    "view_inat": "View on iNaturalist",
+    "wikipedia": "Wikipedia",
+    "previous": "Previous",
+    "next": "Next"
+  },
+  "feedback": {
+    "section_aria": "Trip notes",
+    "eyebrow": "Trip notes",
+    "title": "Keep a simple field log",
+    "copy": "Save a quick note after each outing so you can compare forecasts with real finds.",
+    "add_result": "Add trip result",
+    "copy_error": "Copy error text",
+    "export": "Copy feedback log",
+    "clear": "Clear log",
+    "modal_title": "Did you find mushrooms today?",
+    "modal_close_aria": "Close feedback form",
+    "trip_duration": "Trip duration",
+    "submit": "Submit feedback",
+    "select_result": "Select a trip result before submitting feedback.",
+    "sync": {
+      "local_only": "Local only",
+      "issue": "Sync issue",
+      "pending": "Sync pending",
+      "synced": "Synced"
+    },
+    "status": {
+      "upload_failed_retry": "Upload failed. We will retry automatically when possible.",
+      "no_checkin_local": "No check-in logged for this day yet. Total check-ins: {{count}}. Local-only logging is active.",
+      "no_checkin": "No check-in logged for this day yet. Total check-ins: {{count}}.",
+      "saved_retry": "Saved for this day and location: {{response}}{{duration}}{{alignment}} ({{when}}). Upload failed for now and will retry automatically.",
+      "saved": "Saved for this day and location: {{response}}{{duration}}{{alignment}} ({{when}}). Total check-ins: {{count}}{{delta}}.",
+      "sync_error_copied": "Sync error text copied.",
+      "sync_error_copy_failed": "Could not copy sync error text.",
+      "copied_log": "Copied {{count}} feedback entries to clipboard.",
+      "copy_log_failed": "Could not copy feedback log. Clipboard permission may be blocked.",
+      "cleared": "Feedback log cleared."
+    },
+    "options": {
+      "none": "Not at all",
+      "one_two": "One or Two",
+      "several": "Several",
+      "many": "A ton!"
+    },
+    "duration": {
+      "short": "Less than 30 mins",
+      "medium": "Under two hours (30-120 mins)",
+      "long": "Longer than 2 hrs"
+    },
+    "alignment": {
+      "matched": "Matched expectation",
+      "better": "Better than expected",
+      "lower": "Lower than expected"
+    },
+    "label": {
+      "duration": " | Duration: {{value}}",
+      "alignment": " | Alignment: {{value}}",
+      "delta": " | Score vs feedback curve: {{value}}"
+    }
+  },
+  "modals": {
+    "observation": "Observation",
+    "observation_aria": "Close observation popup",
+    "observation_preview": "Observation preview"
+  },
+  "units": {
+    "celsius": "C",
+    "mm": "mm",
+    "percent": "%"
+  },
+  "rain": {
+    "descriptor": "Light <= {{light}} mm | Medium <= {{medium}} mm | Heavy <= {{heavy}} mm | Extreme > {{heavy}} mm",
+    "descriptor_mobile": "L<={{light}} M<={{medium}} H<={{heavy}} X>{{heavy}} mm"
+  }
+}

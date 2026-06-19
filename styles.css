@@ -3103,3 +3103,61 @@ body {
     padding: 16px 20px;
   }
 }
+
+.header-utilities {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.locale-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(39, 70, 52, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 253, 248, 0.88);
+}
+
+.locale-button {
+  min-width: 38px;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-subtle);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.locale-button:hover,
+.locale-button:focus-visible {
+  background: rgba(39, 70, 52, 0.08);
+  color: var(--text-strong);
+  outline: none;
+}
+
+.locale-button.is-active {
+  background: rgba(31, 95, 45, 0.12);
+  color: var(--text-strong);
+  box-shadow: inset 0 0 0 1px rgba(31, 95, 45, 0.16);
+}
+
+@media (max-width: 860px) {
+  .header-utilities {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .locale-switcher {
+    order: -1;
+  }
+}
