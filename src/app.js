@@ -116,6 +116,7 @@ const elements = {
   locationSuggestions: document.querySelector("#locationSuggestions"),
   inatRadiusSelect: document.querySelector("#inatRadiusSelect"),
   mapModal: document.querySelector("#mapModal"),
+  mapLegend: document.querySelector(".map-legend"),
   mobileTabs: document.querySelector("#mobileTabs"),
   mapRadiusCopy: document.querySelector("[data-map-radius-copy]"),
   mobileOverviewSection: document.querySelector("#mobileOverviewSection"),
@@ -805,6 +806,17 @@ function formatConfidenceLabel(confidence) {
   return translated === key ? confidence : translated;
 }
 
+function isoDateDifference(fromDateString, toDateString) {
+  const from = new Date(`${fromDateString}T12:00:00Z`);
+  const to = new Date(`${toDateString}T12:00:00Z`);
+  if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime())) return null;
+  return Math.round((to.getTime() - from.getTime()) / 86400000);
+}
+
+function clamp01(value) {
+  return clamp(value, 0, 1);
+}
+
 function moistureSignalLabel(moistureResponse) {
   if (!Number.isFinite(moistureResponse)) return "--";
   if (moistureResponse >= 0.62) return t("moisture.strong");
@@ -855,6 +867,259 @@ function buildOutlookNarrative({ isBestDay, verdict, reasons }) {
   const verdictSentence = verdict && /[.!?]$/.test(verdict) ? verdict : verdict ? `${verdict}.` : "";
   const supportingSentence = (reasons ?? []).slice(0, 2).map((reason) => t(reason)).join(" ");
   return [lead, verdictSentence, supportingSentence].filter(Boolean).join(" ");
+}
+
+function buildHeroExplanation({ isBestDay, reasons }) {
+  const lead = isBestDay ? t("forecast.best_day") : "";
+  const supportingSentence = (reasons ?? []).slice(0, 2).map((reason) => t(reason)).join(" ");
+  return [lead, supportingSentence].filter(Boolean).join(" ");
+}
+
+function factorStateKey(points, maxPoints) {
+  const ratio = maxPoints > 0 ? points / maxPoints : 0;
+  if (ratio >= 0.72) return "strong";
+  if (ratio >= 0.4) return "moderate";
+  if (ratio > 0.12) return "light";
+  return "limited";
+}
+
+function allocateScoreBreakdown(day) {
+  const breakdownMaxima = {
+    moisture: 35,
+    timing: 30,
+    temperature: 18,
+    freshness: 12,
+    field_activity: 5,
+  };
+  const diagnostics = day?.diagnostics ?? {};
+  const componentBreakdown = diagnostics.componentBreakdown ?? {};
+  const moistureStrength = clamp01(
+    0.8 * (componentBreakdown.rainEventComponent ?? 0) +
+    0.2 * Math.max(
+      diagnostics.humidityCarryoverLift ?? 0,
+      diagnostics.humidityCarryoverSupport ?? 0,
+      0,
+    ),
+  );
+  const timingStrength = clamp01(componentBreakdown.harvestWindowComponent ?? 0);
+  const temperatureStrength = clamp01(componentBreakdown.temperatureComponent ?? 0);
+  const freshnessPenalty = clamp01(
+    0.34 * (componentBreakdown.spoilagePenalty ?? 0) +
+    0.28 * (componentBreakdown.stalenessPenalty ?? 0) +
+    0.22 * (componentBreakdown.dryingPenalty ?? 0) +
+    0.16 * (componentBreakdown.coldPenalty ?? 0),
+  );
+  const freshnessStrength = clamp01(1 - freshnessPenalty);
+  const fieldActivityPoints = clamp(Math.round(diagnostics.fieldActivityBonusPoints ?? 0), 0, breakdownMaxima.field_activity);
+  const totalScore = clamp(Math.round(day?.score ?? 0), 0, 100);
+  const remainingScore = clamp(totalScore - fieldActivityPoints, 0, 95);
+  const remainingScoreRatio = remainingScore / 95;
+
+  const weightedDrivers = [
+    {
+      key: "moisture",
+      strength: moistureStrength,
+      max: breakdownMaxima.moisture,
+      emphasis: 1.28,
+      cap: Math.min(
+        breakdownMaxima.moisture,
+        Math.max(4, Math.round(breakdownMaxima.moisture * (0.5 + 0.5 * remainingScoreRatio))),
+      ),
+    },
+    {
+      key: "timing",
+      strength: timingStrength,
+      max: breakdownMaxima.timing,
+      emphasis: 1.22,
+      cap: Math.min(
+        breakdownMaxima.timing,
+        Math.max(4, Math.round(breakdownMaxima.timing * (0.5 + 0.5 * remainingScoreRatio))),
+      ),
+    },
+    {
+      key: "temperature",
+      strength: temperatureStrength,
+      max: breakdownMaxima.temperature,
+      emphasis: 0.88,
+      cap: Math.min(
+        breakdownMaxima.temperature,
+        Math.max(3, Math.round(breakdownMaxima.temperature * (0.35 + 0.65 * remainingScoreRatio))),
+      ),
+    },
+    {
+      key: "freshness",
+      strength: freshnessStrength,
+      max: breakdownMaxima.freshness,
+      emphasis: 0.76,
+      cap: Math.min(
+        breakdownMaxima.freshness,
+        Math.max(2, Math.round(breakdownMaxima.freshness * (0.35 + 0.65 * remainingScoreRatio))),
+      ),
+    },
+  ];
+
+  const provisional = weightedDrivers.map((item) => {
+    const weightedStrength = Math.pow(item.strength, 1.05);
+    const baseRawPoints = item.cap * weightedStrength;
+    return {
+      key: item.key,
+      max: item.max,
+      cap: item.cap,
+      strength: item.strength,
+      emphasis: item.emphasis,
+      points: Math.min(item.cap, Math.floor(baseRawPoints)),
+      remainder: baseRawPoints - Math.floor(baseRawPoints),
+    };
+  });
+
+  let allocated = provisional.reduce((sum, item) => sum + item.points, 0);
+
+  if (allocated > remainingScore) {
+    const scaledProvisional = provisional.map((item) => {
+      const rawPoints = allocated > 0 ? (item.points / allocated) * remainingScore : 0;
+      const flooredPoints = Math.min(item.max, Math.floor(rawPoints));
+      return {
+        ...item,
+        points: flooredPoints,
+        remainder: rawPoints - flooredPoints,
+      };
+    });
+    allocated = scaledProvisional.reduce((sum, item) => sum + item.points, 0);
+    while (allocated < remainingScore) {
+      const candidate = scaledProvisional
+        .filter((item) => item.points < item.cap)
+        .sort((left, right) => right.remainder - left.remainder || right.strength - left.strength)[0];
+      if (!candidate) break;
+      candidate.points += 1;
+      candidate.remainder = 0;
+      allocated += 1;
+    }
+    provisional.splice(0, provisional.length, ...scaledProvisional);
+  } else {
+    while (allocated < remainingScore) {
+      const candidate = provisional
+        .filter((item) => item.points < item.cap)
+        .sort((left, right) => {
+          const rightHeadroom = right.cap - right.points;
+          const leftHeadroom = left.cap - left.points;
+          const rightPriority = right.strength * right.emphasis + right.remainder * 0.35 + (rightHeadroom / right.cap) * 0.12;
+          const leftPriority = left.strength * left.emphasis + left.remainder * 0.35 + (leftHeadroom / left.cap) * 0.12;
+          return rightPriority - leftPriority || right.strength - left.strength;
+        })[0];
+      if (!candidate) break;
+      candidate.points += 1;
+      allocated += 1;
+    }
+  }
+
+  const bucketMap = Object.fromEntries(provisional.map((item) => [item.key, item.points]));
+  bucketMap.field_activity = fieldActivityPoints;
+
+  const definitions = [
+    {
+      key: "moisture",
+      label: t("breakdown.moisture.label"),
+      summaryText: t(`breakdown.moisture.summary.${factorStateKey(bucketMap.moisture, breakdownMaxima.moisture)}`),
+      detailText: t("breakdown.moisture.detail"),
+      detailMeta: t("breakdown.moisture.meta"),
+    },
+    {
+      key: "timing",
+      label: t("breakdown.timing.label"),
+      summaryText: t(`breakdown.timing.summary.${factorStateKey(bucketMap.timing, breakdownMaxima.timing)}`),
+      detailText: t("breakdown.timing.detail"),
+      detailMeta: t("breakdown.timing.meta"),
+    },
+    {
+      key: "temperature",
+      label: t("breakdown.temperature.label"),
+      summaryText: t(`breakdown.temperature.summary.${factorStateKey(bucketMap.temperature, breakdownMaxima.temperature)}`),
+      detailText: t("breakdown.temperature.detail"),
+      detailMeta: t("breakdown.temperature.meta"),
+    },
+    {
+      key: "freshness",
+      label: t("breakdown.freshness.label"),
+      summaryText: t(`breakdown.freshness.summary.${factorStateKey(bucketMap.freshness, breakdownMaxima.freshness)}`),
+      detailText: t("breakdown.freshness.detail"),
+      detailMeta: t("breakdown.freshness.meta"),
+    },
+    {
+      key: "field_activity",
+      label: t("breakdown.field_activity.label"),
+      summaryText: t(`breakdown.field_activity.summary.${diagnostics.fieldActivityState || "limited"}`),
+      detailText: t("breakdown.field_activity.detail"),
+      detailMeta: t("breakdown.field_activity.meta", {
+        count: formatNumber(diagnostics.fieldActivityRecentDistinctCount ?? 0),
+      }),
+    },
+  ];
+
+  return {
+    scoreBreakdownTotal: Object.values(bucketMap).reduce((sum, value) => sum + value, 0),
+    buckets: definitions.map((definition) => {
+      const points = bucketMap[definition.key] ?? 0;
+      const maxPoints = breakdownMaxima[definition.key];
+      return {
+        ...definition,
+        points,
+        maxPoints,
+        fillPercent: maxPoints > 0 ? (points / maxPoints) * 100 : 0,
+      };
+    }),
+  };
+}
+
+function scoreBreakdownMarkup(day) {
+  const breakdown = allocateScoreBreakdown(day);
+  const totalMax = breakdown.buckets.reduce((sum, bucket) => sum + bucket.maxPoints, 0);
+  const segmentMarkup = breakdown.buckets.map((bucket) => `
+    <span
+      class="score-breakdown-total-segment"
+      style="width:${(bucket.points / Math.max(totalMax, 1)) * 100}%"
+      aria-hidden="true"
+    ></span>
+  `).join("");
+  const rows = breakdown.buckets.map((bucket) => `
+    <button
+      class="score-breakdown-item"
+      type="button"
+      aria-label="${bucket.label}: ${t("breakdown.points", { points: formatNumber(bucket.points), max: formatNumber(bucket.maxPoints) })}"
+    >
+      <span class="score-breakdown-main">
+        <span class="score-breakdown-copy">
+          <strong>${bucket.label}</strong>
+          <small>${bucket.summaryText}</small>
+        </span>
+        <span class="score-breakdown-points">${formatNumber(bucket.points)}<span>/ ${formatNumber(bucket.maxPoints)}</span></span>
+      </span>
+      <span class="score-breakdown-bar" aria-hidden="true">
+        <span class="score-breakdown-cap" style="width:${bucket.maxPoints}%"></span>
+        <span class="score-breakdown-fill" style="width:${bucket.points}%"></span>
+      </span>
+      <span class="score-breakdown-tooltip" role="tooltip">
+        <strong>${bucket.label}</strong>
+        <span>${t("breakdown.points", { points: formatNumber(bucket.points), max: formatNumber(bucket.maxPoints) })}</span>
+        <span>${bucket.detailText}</span>
+        <span>${bucket.detailMeta}</span>
+      </span>
+    </button>
+  `).join("");
+
+  return `
+    <div class="summary-breakdown-heading">
+      <span>${t("breakdown.heading")}</span>
+      <strong>${formatNumber(breakdown.scoreBreakdownTotal)} / ${formatNumber(totalMax)}</strong>
+    </div>
+    <div class="summary-breakdown-total">
+      <div class="summary-breakdown-total-copy">
+        <span>${t("breakdown.maximum_score")}</span>
+        <strong>${formatNumber(breakdown.scoreBreakdownTotal)} / ${formatNumber(totalMax)}</strong>
+      </div>
+      <span class="summary-breakdown-total-bar" aria-hidden="true">${segmentMarkup}</span>
+    </div>
+    <div class="score-breakdown-list">${rows}</div>
+  `;
 }
 
 function getSeasonForDate(dateString, latitude) {
@@ -1183,6 +1448,7 @@ async function fetchINaturalistRecentResearch(latitude, longitude, radiusKm, ext
       latitude: Number.isFinite(latitudeValue) ? latitudeValue : null,
       longitude: Number.isFinite(longitudeValue) ? longitudeValue : null,
       observedOn,
+      observedOnRaw,
       photo,
       species,
       url: item.uri || `https://www.inaturalist.org/observations/${item.id}`,
@@ -1239,6 +1505,7 @@ async function fetchINaturalistRecentNonResearch(latitude, longitude, radiusKm, 
         latitude: Number.isFinite(latitudeValue) ? latitudeValue : null,
         longitude: Number.isFinite(longitudeValue) ? longitudeValue : null,
         observedOn,
+        observedOnRaw,
         photo,
         species,
         url: item.uri || `https://www.inaturalist.org/observations/${item.id}`,
@@ -1349,6 +1616,63 @@ async function fetchINaturalistRecentResearchAll(latitude, longitude, radiusKm, 
 function summarizeRegionalStats(stats) {
   if (!stats || stats.status === "unavailable") return "";
   return "";
+}
+
+function observationConfidenceWeight(observation) {
+  if (observation.qualityGrade === "research") return 1;
+  const agreements = Number.isFinite(observation.num_identification_agreements) ? observation.num_identification_agreements : 0;
+  const disagreements = Number.isFinite(observation.num_identification_disagreements) ? observation.num_identification_disagreements : 0;
+  const ids = Number.isFinite(observation.identifications_count) ? observation.identifications_count : 0;
+  const agreementBoost = clamp(0.58 + agreements * 0.12 + ids * 0.04 - disagreements * 0.1, 0.35, 0.92);
+  return clamp01(agreementBoost);
+}
+
+function observationRecencyWeight(daysAgo) {
+  if (!Number.isFinite(daysAgo) || daysAgo < 0 || daysAgo > 14) return 0;
+  if (daysAgo <= 3) return 1;
+  if (daysAgo <= 7) return 0.45;
+  return 0.14;
+}
+
+function computeFieldActivityBonus(dateString, regionalStats) {
+  const observations = regionalStats?.uniqueResearchObservations ?? [];
+  if (!observations.length) {
+    return {
+      points: 0,
+      weightedSignal: 0,
+      normalizedSignal: 0,
+      recentDistinctCount: 0,
+      state: "limited",
+    };
+  }
+
+  let weightedSignal = 0;
+  let recentDistinctCount = 0;
+  for (const observation of observations) {
+    const observedOnRaw = observation.observedOnRaw;
+    if (!observedOnRaw) continue;
+    const daysAgo = isoDateDifference(observedOnRaw, dateString);
+    const recencyWeight = observationRecencyWeight(daysAgo);
+    if (recencyWeight <= 0) continue;
+    recentDistinctCount += 1;
+    const qualityWeight = observation.qualityGrade === "research" ? 1 : 0.58;
+    const confidenceWeight = observationConfidenceWeight(observation);
+    weightedSignal += recencyWeight * qualityWeight * confidenceWeight;
+  }
+
+  const normalizedSignal = clamp01(1 - Math.exp(-weightedSignal / 3.2));
+  let rawPoints = normalizedSignal * 5;
+  if (weightedSignal < 1.15) rawPoints = Math.min(rawPoints, 1);
+  const points = clamp(Math.round(rawPoints), 0, 5);
+  const state = points >= 4 ? "strong" : points >= 2 ? "moderate" : points >= 1 ? "light" : "limited";
+
+  return {
+    points,
+    weightedSignal,
+    normalizedSignal,
+    recentDistinctCount,
+    state,
+  };
 }
 
 async function fetchRegionalObservationStats(latitude, longitude, dateString, radiusKm) {
@@ -1665,7 +1989,9 @@ function scoreDay(days, index, todayIndex) {
     daysAhead: Math.max(0, index - todayIndex),
     regionalStats: state.regionalStats,
   });
-  const score = Math.round(modelInference.probability * 100);
+  const fieldActivityBonus = computeFieldActivityBonus(target.date, state.regionalStats);
+  const boostedProbability = clamp(modelInference.probability + fieldActivityBonus.points / 100, 0, 1);
+  const score = Math.round(boostedProbability * 100);
   const daysSinceMeaningfulRain =
     Number.isFinite(featureBundle?.diagnostics?.dryDaysSinceMeaningfulRain)
       ? featureBundle.diagnostics.dryDaysSinceMeaningfulRain
@@ -1679,6 +2005,11 @@ function scoreDay(days, index, todayIndex) {
     diagnostics: {
       ...modelInference.diagnostics,
       ...featureBundle.diagnostics,
+      fieldActivityBonusPoints: fieldActivityBonus.points,
+      fieldActivityWeightedSignal: fieldActivityBonus.weightedSignal,
+      fieldActivityNormalizedSignal: fieldActivityBonus.normalizedSignal,
+      fieldActivityRecentDistinctCount: fieldActivityBonus.recentDistinctCount,
+      fieldActivityState: fieldActivityBonus.state,
       modelVersion: MODEL_METADATA.modelVersion,
     },
     factorImportance: modelInference.topFactors,
@@ -1702,10 +2033,10 @@ function scoreDay(days, index, todayIndex) {
     humidity5dWeighted,
     daysSinceMeaningfulRain,
     rainClassFixed,
-    probability: modelInference.probability,
+    probability: boostedProbability,
     score: clamp(score, 0, 100),
     season,
-    verdict: scoreToVerdict(modelInference.probability),
+    verdict: scoreToVerdict(boostedProbability),
     reasons: buildReasons({
       rainEventClass: featureBundle.diagnostics.rainEventClass,
       rain5dResponse: featureBundle.diagnostics.rain5d_response,
@@ -2176,26 +2507,18 @@ function renderSelectedDay() {
     verdict,
     reasons: selectedDay.reasons,
   });
+  const heroExplanation = buildHeroExplanation({
+    isBestDay,
+    reasons: selectedDay.reasons,
+  });
 
   elements.summaryLabel.textContent = t("header.today");
   if (elements.summaryDate) elements.summaryDate.textContent = label;
   elements.todayScore.textContent = formatScore(selectedDay.score);
   elements.todayVerdict.textContent = verdict;
-  if (elements.summaryExplanation) elements.summaryExplanation.textContent = outlookNarrative;
+  if (elements.summaryExplanation) elements.summaryExplanation.textContent = heroExplanation;
   if (elements.summaryMetrics) {
-    elements.summaryMetrics.innerHTML = [
-      metricPillMarkup({
-        label: t("metrics.overall_signal"),
-        value: signal.shortLabel,
-        helper: t("metrics.overall_signal_helper"),
-        className: signal.className,
-      }),
-      metricPillMarkup({
-        label: t("metrics.moisture_support"),
-        value: moistureSignal,
-        helper: t("metrics.moisture_support_helper"),
-      }),
-    ].join("");
+    elements.summaryMetrics.innerHTML = scoreBreakdownMarkup(selectedDay);
   }
   elements.confidenceBadge.textContent = formatConfidenceLabel(selectedDay.confidence);
   elements.analysisTitle.textContent = t("forecast.compare_title", { date: label });
@@ -2383,8 +2706,13 @@ async function resolveLocationInput(value) {
 }
 
 function updateRadiusLegend() {
+  const radiusLabel = t("map.radius_selected", { radius: formatNumber(state.inatRadiusKm) });
   const label = elements.mapRadiusCopy;
-  if (label) label.textContent = t("map.radius_selected", { radius: formatNumber(state.inatRadiusKm) });
+  if (label) label.textContent = radiusLabel;
+  if (elements.mapLegend) {
+    elements.mapLegend.setAttribute("title", radiusLabel);
+    elements.mapLegend.setAttribute("aria-label", radiusLabel);
+  }
 }
 
 function updateRegionalScopeCopy() {
@@ -2411,6 +2739,7 @@ function refreshLocalizedUI() {
     if (elements.summaryDate) elements.summaryDate.textContent = t("header.default_date");
     elements.todayVerdict.textContent = t("header.default_outlook");
     if (elements.summaryExplanation) elements.summaryExplanation.textContent = t("header.default_explanation");
+    if (elements.summaryMetrics) elements.summaryMetrics.innerHTML = "";
     if (elements.analysisTitle) elements.analysisTitle.textContent = t("forecast.analysis_title_default");
     if (elements.analysisCopy) elements.analysisCopy.textContent = t("forecast.analysis_copy_default");
     if (elements.detailStatusNote) elements.detailStatusNote.textContent = t("forecast.details_default_note");

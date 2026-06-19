@@ -52,7 +52,7 @@
     "expand": "Expand map",
     "map_aria": "Select a map location",
     "legend_aria": "Search radius",
-    "legend_title": "Mushroom search area",
+    "legend_title": "Active search area",
     "radius_selected": "{{radius}} km around the selected point",
     "modal_title": "Search area",
     "modal_close_aria": "Close expanded map",
@@ -267,5 +267,65 @@
   "rain": {
     "descriptor": "Light <= {{light}} mm | Medium <= {{medium}} mm | Heavy <= {{heavy}} mm | Extreme > {{heavy}} mm",
     "descriptor_mobile": "L<={{light}} M<={{medium}} H<={{heavy}} X>{{heavy}} mm"
+  },
+  "breakdown": {
+    "heading": "What?s driving today",
+    "points": "{{points}} out of {{max}} points",
+    "moisture": {
+      "label": "Moisture",
+      "summary": {
+        "strong": "Strong moisture support",
+        "moderate": "Helpful moisture support",
+        "light": "Limited moisture support",
+        "limited": "Very little moisture signal"
+      },
+      "detail": "Recent rain and lingering humidity are giving the day real support.",
+      "meta": "Built from rain-event support and moisture carryover."
+    },
+    "timing": {
+      "label": "Timing",
+      "summary": {
+        "strong": "Window lines up well",
+        "moderate": "Timing looks workable",
+        "light": "Timing is marginal",
+        "limited": "Timing is weak"
+      },
+      "detail": "Measures whether the current weather window lines up with stronger foraging potential.",
+      "meta": "Built from harvest-window and rainfall timing."
+    },
+    "temperature": {
+      "label": "Temperature",
+      "summary": {
+        "strong": "Temperature fits well",
+        "moderate": "Temperature is workable",
+        "light": "Temperature only helps a little",
+        "limited": "Temperature fit is weak"
+      },
+      "detail": "Shows how well current temperatures match active mushroom growth conditions.",
+      "meta": "Built from temperature suitability in the model."
+    },
+    "freshness": {
+      "label": "Freshness",
+      "summary": {
+        "strong": "Conditions are holding up well",
+        "moderate": "The window is still holding",
+        "light": "The window is fading",
+        "limited": "The window feels tired"
+      },
+      "detail": "Combines aging, drying, cold, and spoilage pressure into one read on how well the window is holding up.",
+      "meta": "Built from spoilage, staleness, drying, and cold pressure."
+    },
+    "field_activity": {
+      "label": "Field activity",
+      "summary": {
+        "strong": "Strong local signal",
+        "moderate": "Useful local signal",
+        "light": "Small local signal",
+        "limited": "Very limited local signal"
+      },
+      "detail": "A small bonus from nearby observations, weighted heavily toward the most recent reports.",
+      "meta": "Uses {{count}} distinct nearby observations with strong recency weighting."
+    },
+    "maximum_score": "Maximum possible score"
   }
 }

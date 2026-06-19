@@ -52,7 +52,7 @@
     "expand": "Karte erweitern",
     "map_aria": "Ort auf der Karte wählen",
     "legend_aria": "Suchradius",
-    "legend_title": "Pilz-Suchgebiet",
+    "legend_title": "Aktiver Suchbereich",
     "radius_selected": "{{radius}} km um den gewählten Punkt",
     "modal_title": "Suchbereich",
     "modal_close_aria": "Erweiterte Karte schließen",
@@ -267,5 +267,65 @@
   "rain": {
     "descriptor": "Leicht <= {{light}} mm | Mittel <= {{medium}} mm | Stark <= {{heavy}} mm | Extrem > {{heavy}} mm",
     "descriptor_mobile": "L<={{light}} M<={{medium}} H<={{heavy}} X>{{heavy}} mm"
+  },
+  "breakdown": {
+    "heading": "Was heute treibt",
+    "points": "{{points}} von {{max}} Punkten",
+    "moisture": {
+      "label": "Feuchtigkeit",
+      "summary": {
+        "strong": "Starke Feuchtigkeitslage",
+        "moderate": "Hilfreiche Feuchtigkeit",
+        "light": "Begrenzte Feuchtigkeit",
+        "limited": "Kaum Feuchtigkeitssignal"
+      },
+      "detail": "Regen und gespeicherte Feuchtigkeit geben dem Tag R?ckenwind.",
+      "meta": "Basiert auf Regenimpuls und verbleibender Feuchtigkeit."
+    },
+    "timing": {
+      "label": "Timing",
+      "summary": {
+        "strong": "Fenster sitzt gut",
+        "moderate": "Timing ist brauchbar",
+        "light": "Timing ist randst?ndig",
+        "limited": "Timing ist schwach"
+      },
+      "detail": "Bewertet, ob das aktuelle Wetterfenster gerade g?nstig f?r gute Funde liegt.",
+      "meta": "Basiert auf Erntefenster- und Niederschlags-Timing."
+    },
+    "temperature": {
+      "label": "Temperatur",
+      "summary": {
+        "strong": "Temperatur passt gut",
+        "moderate": "Temperatur ist brauchbar",
+        "light": "Temperatur hilft nur etwas",
+        "limited": "Temperatur passt kaum"
+      },
+      "detail": "Zeigt, wie gut die aktuellen Temperaturen zum aktiven Wachstum passen.",
+      "meta": "Basiert auf Temperatur-Eignung im Modell."
+    },
+    "freshness": {
+      "label": "Frische",
+      "summary": {
+        "strong": "Bedingungen halten gut",
+        "moderate": "Fenster h?lt noch",
+        "light": "Fenster baut ab",
+        "limited": "Fenster wirkt alt"
+      },
+      "detail": "Fasst Alterung, Trocknung, K?lte und Verderbdruck zu einer Haltbarkeits-Sicht zusammen.",
+      "meta": "Basiert auf Verderb-, Alterungs-, Trocknungs- und K?ltesignalen."
+    },
+    "field_activity": {
+      "label": "Feldaktivit?t",
+      "summary": {
+        "strong": "Starker lokaler Hinweis",
+        "moderate": "N?tzlicher lokaler Hinweis",
+        "light": "Kleiner lokaler Hinweis",
+        "limited": "Kaum lokales Signal"
+      },
+      "detail": "Ein kleiner Bonus aus nahen Beobachtungen, stark zugunsten der letzten Tage gewichtet.",
+      "meta": "Ber?cksichtigt {{count}} verschiedene nahe Beobachtungen mit starker Frische-Gewichtung."
+    },
+    "maximum_score": "Maximal m?gliche Punktzahl"
   }
 }
